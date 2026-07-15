@@ -5,7 +5,7 @@ import fitz
 import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
 from app.core.memory import classroom_brains
 from dotenv import load_dotenv
@@ -49,7 +49,7 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
         
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
         vector_store = FAISS.from_documents(chunks, embeddings)
         classroom_brains[classroom_id] = vector_store
             
