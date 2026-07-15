@@ -3,7 +3,7 @@ apply_ssl_fix()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import upload, websockets
+from app.api import upload, websockets, personal_websockets
 
 app = FastAPI(
     title="ClimbUP AI Classroom API",
@@ -22,6 +22,7 @@ app.add_middleware(
 
 app.include_router(upload.router)
 app.include_router(websockets.router)
+app.include_router(personal_websockets.router)
 
 @app.get("/")
 def root():
