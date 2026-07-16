@@ -1,6 +1,7 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import shutil
 import os
+import uuid
 import fitz
 import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -8,6 +9,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
 from app.core.memory import classroom_brains
+from app.core.supabase_client import supabase_new
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,8 +19,9 @@ router = APIRouter()
 
 @router.post("/api/v1/classrooms/{classroom_id}/upload")
 async def upload_material(classroom_id: str, file: UploadFile = File(...)):
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported for the MVP.")
+    allowed_exts = ('.pdf', '.ppt', '.pptx', '.png', '.jpg', '.jpeg')
+    if not file.filename.lower().endswith(allowed_exts):
+        raise HTTPException(status_code=400, detail="Only PDF, PPT, and Images are supported.")
         
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{classroom_id}_{file.filename}"
@@ -54,6 +57,81 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         classroom_brains[classroom_id] = vector_store
             
         return {"status": "success", "message": f"Successfully uploaded and trained AI on {file.filename} using Gemini OCR!"}
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"detail": str(e)})
+
+@router.post("/api/v1/upload-smart")
+async def upload_smart_material(
+    university_id: str = Form(...),
+    branch_id: str = Form(...),
+    semester_id: str = Form(...),
+    subject_id: str = Form(...),
+    topic_title: str = Form(...),
+    file: UploadFile = File(...)
+):
+    allowed_exts = ('.pdf', '.ppt', '.pptx', '.png', '.jpg', '.jpeg')
+    if not file.filename.lower().endswith(allowed_exts):
+        raise HTTPException(status_code=400, detail="Only PDF, PPT, and Images are supported.")
+        
+    classroom_id = str(uuid.uuid4())
+    
+    os.makedirs("uploads", exist_ok=True)
+    file_path = f"uploads/{classroom_id}_{file.filename}"
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        try:
+            supabase_new.table('subjects').upsert({"id": subject_id, "subject_name": f"Subject {subject_id}"}).execute()
+        except Exception:
+            pass 
+            
+        session_data = {
+            "id": classroom_id,
+            "subject_id": subject_id,
+            "topic_name": topic_title
+        }
+        supabase_new.table('daily_sessions').insert(session_data).execute()
+        
+        from llama_parse import LlamaParse
+        
+        parser = LlamaParse(
+            api_key=os.environ.get("LLAMA_CLOUD_API_KEY"),
+            result_type="markdown",
+            verbose=True
+        )
+        
+        llama_docs = parser.load_data(file_path)
+        full_text = "\n\n".join([doc.text for doc in llama_docs])
+                
+        if not full_text.strip():
+             raise ValueError("Could not extract any text or image data from the file.")
+             
+        metadata = {
+            "classroom_id": classroom_id, 
+            "university_id": university_id,
+            "branch_id": branch_id,
+            "semester_id": semester_id,
+            "subject_id": subject_id,
+            "topic_title": topic_title,
+            "source": file.filename
+        }
+        document = Document(page_content=full_text, metadata=metadata)
+        
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        chunks = text_splitter.split_documents([document])
+        
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
+        vector_store = FAISS.from_documents(chunks, embeddings)
+        classroom_brains[classroom_id] = vector_store
+            
+        return {
+            "status": "success", 
+            "classroom_id": classroom_id,
+            "message": f"Successfully uploaded {file.filename} and mapped systematically to Vector DB!"
+        }
     except Exception as e:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"detail": str(e)})
