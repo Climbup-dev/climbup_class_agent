@@ -3,7 +3,7 @@ from typing import Dict, List
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from app.core.memory import classroom_brains
 from app.core.supabase_client import supabase_new
@@ -72,7 +72,7 @@ class PersonalConnectionManager:
 
         # Lower temperature for systematic, accurate answers
         self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2) 
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
+        self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
     def disconnect(self, websocket: WebSocket, student_id: str):
         if student_id in self.active_connections:
