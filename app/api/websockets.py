@@ -33,7 +33,7 @@ class ConnectionManager:
         # 1. Fetch Session and Subject Info from Supabase (if not cached)
         if classroom_id not in self.classroom_contexts:
             try:
-                res = supabase_new.table('daily_sessions').select('topic_name, subject_id, lecture_date').eq('id', classroom_id).execute()
+                res = supabase_new.table('classrooms').select('topic_name, subject_id, lecture_date').eq('id', classroom_id).execute()
                 if res.data:
                     c_data = res.data[0]
                     sub_res = supabase_new.table('subjects').select('subject_name').eq('id', c_data['subject_id']).execute()

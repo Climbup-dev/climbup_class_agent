@@ -93,7 +93,7 @@ async def upload_smart_material(
             "subject_id": subject_id,
             "topic_name": topic_title
         }
-        supabase_new.table('daily_sessions').insert(session_data).execute()
+        supabase_new.table('classrooms').insert(session_data).execute()
         
         from llama_parse import LlamaParse
         
