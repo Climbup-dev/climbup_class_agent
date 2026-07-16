@@ -209,7 +209,7 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
         return {"final_response": response.content.strip()}
     except Exception as e:
         logging.error(f"Persona Error: {e}")
-        return {"final_response": "I'm having a little trouble thinking right now. Could you repeat that?"}
+        return {"final_response": f"I'm having a little trouble thinking right now. Error: {str(e)}"}
 
 # Define routing logic
 def route_after_router(state: ClassroomState) -> str:
