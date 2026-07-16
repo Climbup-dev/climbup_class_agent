@@ -1,0 +1,4 @@
+# Replace YOUR_DOMAIN.COM with your actual backend subdomain (e.g. api.climbup.com)
+YOUR_DOMAIN.COM {
+    reverse_proxy api:8000
+}
