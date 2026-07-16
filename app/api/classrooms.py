@@ -28,6 +28,34 @@ async def get_subjects(
         print("Error fetching subjects:", e)
         return {"status": "error", "detail": str(e)}
 
+@router.get("/api/v1/classrooms/subject/{subject_id}")
+async def get_subject_topics(subject_id: str):
+    """
+    Fetches all classrooms (topics/lectures) that belong to a specific subject.
+    This is used by the frontend to display a list of Topic Cards for the user to select from.
+    """
+    try:
+        res = supabase_new.table('classrooms').select('*').eq('subject_id', subject_id).order('created_at', desc=False).execute()
+        
+        # Format the response to be easy for the frontend to render as cards
+        topics = []
+        for row in res.data:
+            topics.append({
+                "classroom_id": row['id'],
+                "topic_name": row.get('topic_name', 'General Topic'),
+                "pdf_url": row.get('pdf_url', ''),
+                "created_at": row.get('created_at', '')
+            })
+            
+        return {
+            "status": "success",
+            "subject_id": subject_id,
+            "topics": topics
+        }
+    except Exception as e:
+        print("Error fetching topics for subject:", e)
+        return {"status": "error", "detail": str(e)}
+
 @router.get("/api/v1/classrooms/active/{subject_id}")
 async def get_active_classroom(subject_id: str):
     """
