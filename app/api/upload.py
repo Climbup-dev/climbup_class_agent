@@ -3,7 +3,6 @@ import shutil
 import os
 import uuid
 import fitz
-import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
@@ -14,7 +13,7 @@ from app.core.supabase_client import supabase_new
 from dotenv import load_dotenv
 
 load_dotenv()
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"), transport="rest")
+
 
 router = APIRouter()
 

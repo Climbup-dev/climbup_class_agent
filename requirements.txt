@@ -16,9 +16,5 @@ langchain-community
 langchain
 faiss-cpu
 python-pptx
-redis
-psycopg2-binary
-pgvector
-langchain-google-genai
 llama-parse
 langchain-openai
