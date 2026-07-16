@@ -19,3 +19,5 @@ python-pptx
 llama-parse
 langchain-openai
 pytz
+langgraph
+duckduckgo-search
