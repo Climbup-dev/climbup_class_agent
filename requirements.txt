@@ -21,3 +21,4 @@ langchain-openai
 pytz
 langgraph
 duckduckgo-search
+langchain-google-genai

@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
 import os
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenAI
 from langchain_openai import OpenAIEmbeddings
 import os
 from langchain_core.prompts import PromptTemplate
@@ -83,7 +83,7 @@ class ConnectionManager:
         except Exception as e:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
-        self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+        self.llm = ChatGoogleGenAI(model="gemini-1.5-flash", temperature=0.7)
         self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):

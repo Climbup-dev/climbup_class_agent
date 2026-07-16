@@ -1,7 +1,7 @@
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenAI
 from duckduckgo_search import DDGS
 import json
 import logging
@@ -34,9 +34,13 @@ class ClassroomState(TypedDict):
     image_url: str
     final_response: str
 
-# Initialize LLM
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-llm_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1).bind(response_format={"type": "json_object"})
+# Initialize Gemini
+llm = ChatGoogleGenAI(model="gemini-1.5-flash", temperature=0.7)
+llm_json = ChatGoogleGenAI(model="gemini-1.5-flash", temperature=0.7)
+
+# Helper function to clean JSON from Gemini output
+def clean_json(text: str) -> str:
+    return text.replace("```json", "").replace("```", "").strip()
 
 def router_node(state: ClassroomState) -> Dict[str, Any]:
     """Decides if the AI should intervene based on student messages."""
@@ -65,7 +69,8 @@ def router_node(state: ClassroomState) -> Dict[str, Any]:
     
     try:
         response = llm_json.invoke(prompt.format(**state))
-        result = json.loads(response.content)
+        raw_content = clean_json(response.content)
+        result = json.loads(raw_content)
         return {
             "should_intervene": result.get("intervene", True),
             "is_disruptive": result.get("is_disruptive", False),
@@ -127,7 +132,8 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     
     try:
         response = llm_json.invoke(formatted_prompt)
-        result = json.loads(response.content)
+        raw_content = clean_json(response.content)
+        result = json.loads(raw_content)
         strategy = result.get("strategy", "Teach the concept beautifully.")
         pedagogy = result.get("pedagogical_decision", "")
         awarded_xp = result.get("awarded_xp", 0)
