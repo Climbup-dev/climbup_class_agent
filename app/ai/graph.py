@@ -1,7 +1,7 @@
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from duckduckgo_search import DDGS
 import json
 import logging
@@ -35,8 +35,8 @@ class ClassroomState(TypedDict):
     final_response: str
 
 # Initialize Gemini
-llm = ChatGoogleGenAI(model="gemini-1.5-flash", temperature=0.7)
-llm_json = ChatGoogleGenAI(model="gemini-1.5-flash", temperature=0.7)
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+llm_json = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
 
 # Helper function to clean JSON from Gemini output
 def clean_json(text: str) -> str:
