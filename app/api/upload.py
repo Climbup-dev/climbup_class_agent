@@ -145,6 +145,29 @@ async def upload_smart_material(
         embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
         vector_store = FAISS.from_documents(chunks, embeddings)
         classroom_brains[classroom_id] = vector_store
+        
+        # --- FAISS Cloud Backup ---
+        import shutil
+        import os
+        
+        faiss_dir = f"faiss_{classroom_id}"
+        vector_store.save_local(faiss_dir)
+        
+        zip_name = f"{faiss_dir}.zip"
+        shutil.make_archive(faiss_dir, 'zip', faiss_dir)
+        
+        bucket_vector = "vector_stores"
+        try:
+            supabase_new.storage.create_bucket(bucket_vector, options={"public": False})
+        except Exception:
+            pass # Bucket exists
+            
+        with open(zip_name, "rb") as f:
+            supabase_new.storage.from_(bucket_vector).upload(zip_name, f.read(), {"content-type": "application/zip"})
+            
+        os.remove(zip_name)
+        shutil.rmtree(faiss_dir)
+        # --------------------------
             
         return {
             "status": "success", 

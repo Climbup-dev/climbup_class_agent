@@ -182,6 +182,33 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             
             try:
                 vector_store = classroom_brains.get(classroom_id)
+                if not vector_store:
+                    # --- FAISS Lazy Load from Supabase ---
+                    try:
+                        bucket_vector = "vector_stores"
+                        zip_name = f"faiss_{classroom_id}.zip"
+                        faiss_dir = f"faiss_{classroom_id}"
+                        
+                        res = supabase_new.storage.from_(bucket_vector).download(zip_name)
+                        with open(zip_name, "wb") as f:
+                            f.write(res)
+                            
+                        import shutil
+                        import os
+                        shutil.unpack_archive(zip_name, faiss_dir)
+                        
+                        from langchain_community.vectorstores import FAISS
+                        # Manager embeddings was initialized in connect()
+                        vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
+                        classroom_brains[classroom_id] = vector_store
+                        
+                        os.remove(zip_name)
+                        shutil.rmtree(faiss_dir)
+                    except Exception as faiss_err:
+                        print("Could not lazy load FAISS:", faiss_err)
+                        vector_store = None
+                    # -------------------------------------
+
                 if vector_store:
                     docs = vector_store.similarity_search(data, k=3)
                     context = "\n".join([doc.page_content for doc in docs])
