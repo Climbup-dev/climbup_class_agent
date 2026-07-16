@@ -1,6 +1,7 @@
 import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+import os
 from langchain_community.vectorstores import PGVector
 from app.core.config import settings
 

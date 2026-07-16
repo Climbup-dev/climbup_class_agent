@@ -3,7 +3,8 @@ from typing import Dict, List
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+import os
 from langchain_core.prompts import PromptTemplate
 from app.core.memory import classroom_brains
 from app.core.supabase_client import supabase_new
@@ -72,7 +73,7 @@ class ConnectionManager:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
         self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-        self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):
         if classroom_id in self.active_connections:

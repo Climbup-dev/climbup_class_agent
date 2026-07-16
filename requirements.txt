@@ -21,4 +21,4 @@ psycopg2-binary
 pgvector
 langchain-google-genai
 llama-parse
-sentence-transformers
+langchain-openai
