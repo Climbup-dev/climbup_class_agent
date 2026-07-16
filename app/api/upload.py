@@ -52,7 +52,7 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
         
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GEMINI_API_KEY"))
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
         vector_store = FAISS.from_documents(chunks, embeddings)
         classroom_brains[classroom_id] = vector_store
             
@@ -125,7 +125,7 @@ async def upload_smart_material(
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
         
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GEMINI_API_KEY"))
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
         vector_store = FAISS.from_documents(chunks, embeddings)
         classroom_brains[classroom_id] = vector_store
             

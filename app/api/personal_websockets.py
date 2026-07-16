@@ -72,7 +72,7 @@ class PersonalConnectionManager:
 
         # Lower temperature for systematic, accurate answers
         self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2) 
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GEMINI_API_KEY"))
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
 
     def disconnect(self, websocket: WebSocket, student_id: str):
         if student_id in self.active_connections:
