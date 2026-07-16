@@ -147,9 +147,6 @@ async def upload_smart_material(
         classroom_brains[classroom_id] = vector_store
         
         # --- FAISS Cloud Backup ---
-        import shutil
-        import os
-        
         faiss_dir = f"faiss_{classroom_id}"
         vector_store.save_local(faiss_dir)
         
