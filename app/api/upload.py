@@ -83,11 +83,7 @@ async def upload_smart_material(
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        try:
-            supabase_new.table('subjects').upsert({"id": subject_id, "subject_name": f"Subject {subject_id}"}).execute()
-        except Exception:
-            pass 
-            
+        supabase_new.table('subjects').upsert({"id": subject_id, "subject_name": f"Subject {subject_id}"}).execute()
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
