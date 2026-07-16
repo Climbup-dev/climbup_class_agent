@@ -67,6 +67,7 @@ async def upload_smart_material(
     branch_id: str = Form(...),
     semester_id: str = Form(...),
     subject_id: str = Form(...),
+    teacher_id: str = Form(...),
     topic_title: str = Form(...),
     file: UploadFile = File(...)
 ):
@@ -91,6 +92,7 @@ async def upload_smart_material(
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
+            "teacher_id": teacher_id,
             "topic_name": topic_title
         }
         supabase_new.table('classrooms').insert(session_data).execute()
