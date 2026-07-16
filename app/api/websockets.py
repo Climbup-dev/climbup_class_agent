@@ -146,22 +146,22 @@ Answer:
 async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id: str, student_name: str):
     await websocket.accept()
     
-    # --- TIME RESTRICTION LOGIC ---
-    ist = pytz.timezone('Asia/Kolkata')
-    current_time = datetime.datetime.now(ist).time()
-    
-    # Define Class Hours (8:00 PM to 9:00 PM IST)
-    start_time = datetime.time(20, 0)
-    end_time = datetime.time(21, 0)
-    
-    if not (start_time <= current_time <= end_time):
-        await websocket.send_json({
-            "type": "error",
-            "content": "Classroom is Closed! ⏳ Live group sessions are only open between 8:00 PM and 9:00 PM. Please use the Personal Chatbot for 24/7 help."
-        })
-        await websocket.close()
-        return
-    # ------------------------------
+    # --- TIME RESTRICTION LOGIC (TEMPORARILY DISABLED FOR TESTING) ---
+    # ist = pytz.timezone('Asia/Kolkata')
+    # current_time = datetime.datetime.now(ist).time()
+    # 
+    # # Define Class Hours (8:00 PM to 9:00 PM IST)
+    # start_time = datetime.time(20, 0)
+    # end_time = datetime.time(21, 0)
+    # 
+    # if not (start_time <= current_time <= end_time):
+    #     await websocket.send_json({
+    #         "type": "error",
+    #         "content": "Classroom is Closed! ⏳ Live group sessions are only open between 8:00 PM and 9:00 PM. Please use the Personal Chatbot for 24/7 help."
+    #     })
+    #     await websocket.close()
+    #     return
+    # ------------------------------------------------------------------
     
     await manager.connect(websocket, classroom_id, student_id, student_name)
     
