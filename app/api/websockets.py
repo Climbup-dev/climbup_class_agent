@@ -72,7 +72,7 @@ class ConnectionManager:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
         self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=os.getenv("GEMINI_API_KEY"))
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):
         if classroom_id in self.active_connections:

@@ -23,7 +23,7 @@ try:
     print(f"Created {len(chunks)} chunks.")
     
     print("Embedding and storing in FAISS...")
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     vector_store = FAISS.from_documents(chunks, embeddings)
     
     print("Success!")

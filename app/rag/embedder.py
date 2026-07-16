@@ -7,7 +7,7 @@ from app.core.config import settings
 def get_embeddings_model():
     # Utilizing Gemini for embeddings given user's availability of Gemini
     return GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001", 
+        model="models/text-embedding-004", 
         google_api_key=settings.GEMINI_API_KEY
     )
 
