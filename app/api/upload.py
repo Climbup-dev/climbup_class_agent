@@ -82,12 +82,17 @@ async def upload_smart_material(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
+    dummy_teacher_id = str(uuid.uuid4())
     try:
-        supabase_new.table('subjects').upsert({"id": subject_id, "subject_name": f"Subject {subject_id}"}).execute()
+        supabase_new.table('subjects').upsert({
+            "id": subject_id, 
+            "subject_name": f"Subject {subject_id}",
+            "teacher_id": dummy_teacher_id
+        }).execute()
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
-            "teacher_id": str(uuid.uuid4()),
+            "teacher_id": dummy_teacher_id,
             "topic_name": topic_title
         }
         supabase_new.table('classrooms').insert(session_data).execute()
