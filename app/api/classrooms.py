@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from typing import List, Optional
 from app.core.supabase_client import supabase_new
 import traceback
+import os
 
 router = APIRouter()
 
@@ -57,3 +59,28 @@ async def get_active_classroom(subject_id: str):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/api/v1/classrooms/{classroom_id}/pdf")
+async def get_classroom_pdf(classroom_id: str):
+    """
+    Serves the PDF file associated with a classroom session so it can be displayed in the frontend.
+    Looks inside the local 'uploads' directory.
+    """
+    try:
+        # Check if uploads directory exists
+        if not os.path.exists("uploads"):
+            raise HTTPException(status_code=404, detail="Uploads directory not found.")
+            
+        # Search for a file that starts with the classroom_id
+        # Format saved in upload is: f"{classroom_id}_{file.filename}"
+        for filename in os.listdir("uploads"):
+            if filename.startswith(classroom_id + "_"):
+                file_path = os.path.join("uploads", filename)
+                return FileResponse(file_path, media_type="application/pdf", filename=filename.replace(classroom_id + "_", ""))
+                
+        raise HTTPException(status_code=404, detail="PDF not found for this classroom session.")
+    except Exception as e:
+        print(traceback.format_exc())
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
