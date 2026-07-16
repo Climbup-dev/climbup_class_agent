@@ -52,7 +52,8 @@ async def get_active_classroom(subject_id: str):
         return {
             "status": "success",
             "classroom_id": classroom['id'],
-            "topic_name": classroom.get('topic_name', 'General Topic')
+            "topic_name": classroom.get('topic_name', 'General Topic'),
+            "pdf_url": classroom.get('pdf_url', '')
         }
     except Exception as e:
         print(traceback.format_exc())

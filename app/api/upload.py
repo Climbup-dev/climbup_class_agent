@@ -89,13 +89,30 @@ async def upload_smart_material(
             "subject_name": f"Subject {subject_id}",
             "teacher_id": dummy_teacher_id
         }).execute()
+        
+        # Upload to Supabase Storage
+        bucket_name = "class_materials"
+        try:
+            # Create bucket if it doesn't exist
+            supabase_new.storage.create_bucket(bucket_name, options={"public": True})
+        except Exception:
+            pass # Bucket likely already exists
+            
+        storage_path = f"{classroom_id}_{file.filename}"
+        with open(file_path, "rb") as f:
+            supabase_new.storage.from_(bucket_name).upload(storage_path, f.read(), {"content-type": "application/pdf"})
+            
+        pdf_url = supabase_new.storage.from_(bucket_name).get_public_url(storage_path)
+
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
             "teacher_id": dummy_teacher_id,
-            "topic_name": topic_title
+            "topic_name": topic_title,
+            "pdf_url": pdf_url
         }
         supabase_new.table('classrooms').insert(session_data).execute()
+
         
         from llama_parse import LlamaParse
         
