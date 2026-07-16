@@ -257,6 +257,29 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                             # Close the websocket for this specific student
                             await websocket.close(code=1008, reason="Kicked by AI Moderator")
                             continue
+                            
+                    # Gamification: Check if XP was awarded
+                    awarded_xp = result.get("awarded_xp", 0)
+                    if awarded_xp > 0:
+                        try:
+                            # Safely fetch current XP from Supabase to increment it
+                            xp_res = supabase_new.table('student_profiles').select('xp_points').eq('student_id', student_id).execute()
+                            current_xp = xp_res.data[0].get('xp_points', 0) if xp_res.data else 0
+                            new_xp = current_xp + awarded_xp
+                            
+                            # Update in DB
+                            supabase_new.table('student_profiles').update({"xp_points": new_xp}).eq('student_id', student_id).execute()
+                            
+                            # Broadcast award event
+                            await manager.broadcast({
+                                "type": "award",
+                                "student": student_name,
+                                "points": awarded_xp,
+                                "content": f"🎉 {student_name} earned {awarded_xp} XP for a brilliant answer!"
+                            }, classroom_id)
+                        except Exception as xp_err:
+                            print("Error updating XP:", xp_err)
+                            
                 except Exception as e:
                     print("Multi-Agent Error:", e)
                     response_text = "SILENCE"

@@ -26,6 +26,9 @@ class ClassroomState(TypedDict):
     is_disruptive: bool
     is_abusive: bool
     
+    # Gamification
+    awarded_xp: int
+    
     should_intervene: bool
     teaching_strategy: str
     image_url: str
@@ -100,7 +103,9 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
        - If they are disruptive, choose "Strict Warning". 
        - Otherwise choose "Real-world Analogy", "Interactive MCQ Quiz", "Roleplay Scenario", or "Direct Encouraging Answer".
     3. "selected_concept": The exact technical fact/concept from the PDF context you will teach right now. If giving a warning OR doing "Casual/Empathetic Chit-Chat", leave this EMPTY ("").
-    4. "strategy": The final instructions (2-3 sentences) for the Persona Agent on what exactly to say. 
+    4. "awarded_xp": If the student correctly answered a previous technical question/challenge you gave them, award 10 XP. If it was an exceptionally brilliant answer, award 20 XP. If they gave a wrong answer, were off-topic, or just chit-chatting, award 0 XP. (Must be an integer: 0, 10, or 20).
+    5. "strategy": The final instructions (2-3 sentences) for the Persona Agent on what exactly to say. 
+       - If awarded_xp > 0: Instruct the Persona to enthusiastically congratulate them for earning XP before continuing.
        - If "Casual/Empathetic Chit-Chat": Instruct the Persona to act like a cool, caring mentor. Validate their feelings, relieve their stress, and DO NOT force any PDF teaching in this message.
        - If abusive: Instruct the Persona to react like an EXTREMELY ANGRY MAN (Bhai, tameez se baat kar!).
        - If disruptive: Instruct the Persona to give a very strict but slightly funny Hinglish warning. If Strike Count is 2, mention it's their LAST warning before getting kicked out.
@@ -125,6 +130,7 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
         result = json.loads(response.content)
         strategy = result.get("strategy", "Teach the concept beautifully.")
         pedagogy = result.get("pedagogical_decision", "")
+        awarded_xp = result.get("awarded_xp", 0)
         
         # Save a snippet of the strategy to avoid repeating
         new_analogies = state.get("used_analogies", [])
@@ -132,10 +138,10 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
             new_analogies.append(strategy[:50] + "...") 
             
         logging.info(f"Teacher CoT: {result}")
-        return {"teaching_strategy": strategy, "used_analogies": new_analogies}
+        return {"teaching_strategy": strategy, "used_analogies": new_analogies, "awarded_xp": awarded_xp}
     except Exception as e:
         logging.error(f"Teacher Error: {e}")
-        return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", [])}
+        return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0}
 
 def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     """Fetches an image related to the teaching strategy using DuckDuckGo."""
@@ -167,12 +173,14 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     Teaching Strategy: {teaching_strategy}
     Student Name: {student_name}
     Student Profile: {student_profile}
+    Awarded XP: {awarded_xp} XP
     Image URL to include (if any): {image_url}
     
     HIGH EQ RULES:
     1. Write in a flawless, natural mix of Hinglish and English. You are their favorite, cool, stress-relieving engineering teacher.
     2. Read the Room: 
-       - If it's a "Casual/Empathetic Chit-Chat", be extremely warm and friendly. Do NOT teach anything technical. Just connect with them human-to-human (e.g. "Main ekdum badhiya hoon Amir! Tum batao aaj college mein kitna pakaya?").
+       - If Awarded XP > 0: Start by celebrating their correct answer and telling them they earned {awarded_xp} XP! Use party emojis 🎉🔥!
+       - If it's a "Casual/Empathetic Chit-Chat", be extremely warm and friendly. Do NOT teach anything technical. Just connect with them human-to-human.
        - If the strategy is an "Angry Warning", be EXTREMELY ANGRY. No emojis, just pure scolding ("Tameez mein rehna seekho!").
        - If it's a normal warning, be strict but keep a tiny bit of humor ("Class se bahar nikal dunga!"). 
        - If it's a game, format it beautifully with emojis (A 🟢, B 🔴, C 🔵).
@@ -194,6 +202,7 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
             teaching_strategy=state["teaching_strategy"],
             student_name=state["student_name"],
             student_profile=state["student_profile"],
+            awarded_xp=state.get("awarded_xp", 0),
             image_url=state.get("image_url", "")
         )
         response = llm.invoke(formatted_prompt)
