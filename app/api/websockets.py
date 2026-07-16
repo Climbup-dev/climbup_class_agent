@@ -7,7 +7,14 @@ from langchain_openai import OpenAIEmbeddings
 import os
 from langchain_core.prompts import PromptTemplate
 from app.core.memory import classroom_brains
+import os
+import datetime
+import pytz
+from langchain_core.prompts import PromptTemplate
+from app.core.memory import classroom_brains
 from app.core.supabase_client import supabase_new
+from dotenv import load_dotenv
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 load_dotenv()
 
@@ -25,7 +32,6 @@ class ConnectionManager:
         self.student_profiles: Dict[str, dict] = {}
 
     async def connect(self, websocket: WebSocket, classroom_id: str, student_id: str, student_name: str):
-        await websocket.accept()
         if classroom_id not in self.active_connections:
             self.active_connections[classroom_id] = []
         self.active_connections[classroom_id].append(websocket)
@@ -138,6 +144,25 @@ Answer:
 
 @router.websocket("/ws/classroom/{classroom_id}")
 async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id: str, student_name: str):
+    await websocket.accept()
+    
+    # --- TIME RESTRICTION LOGIC ---
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.datetime.now(ist).time()
+    
+    # Define Class Hours (8:00 PM to 9:00 PM IST)
+    start_time = datetime.time(20, 0)
+    end_time = datetime.time(21, 0)
+    
+    if not (start_time <= current_time <= end_time):
+        await websocket.send_json({
+            "type": "error",
+            "content": "Classroom is Closed! ⏳ Live group sessions are only open between 8:00 PM and 9:00 PM. Please use the Personal Chatbot for 24/7 help."
+        })
+        await websocket.close()
+        return
+    # ------------------------------
+    
     await manager.connect(websocket, classroom_id, student_id, student_name)
     
     await manager.broadcast({
