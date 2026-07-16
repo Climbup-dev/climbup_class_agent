@@ -18,3 +18,4 @@ faiss-cpu
 python-pptx
 llama-parse
 langchain-openai
+pytz
