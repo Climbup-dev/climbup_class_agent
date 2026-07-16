@@ -131,7 +131,7 @@ CRITICAL DIRECTIVES:
 
 CRITICAL FORMATTING:
 - If you decide NOT to intervene, output exactly and only: SILENCE
-- If you DO speak, keep your responses EXTREMELY SHORT, punchy, and conversational (Max 3-4 sentences). 
+- If you DO speak, adapt your response length to the complexity of the concept! Agar concept chota hai to short and punchy rakho, agar detail chahiye to elaborate karo suitably, but hamesha conversational aur engaging tone maintain karo. Avoid huge walls of text by breaking it up.
 
 Currently Active Students in Chat: {active_students}
 
