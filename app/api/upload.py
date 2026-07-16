@@ -91,6 +91,7 @@ async def upload_smart_material(
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
+            "teacher_id": str(uuid.uuid4()),
             "topic_name": topic_title
         }
         supabase_new.table('classrooms').insert(session_data).execute()
