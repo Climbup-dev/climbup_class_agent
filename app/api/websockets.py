@@ -32,10 +32,13 @@ class ConnectionManager:
         self.student_profiles: Dict[str, dict] = {}
         # Multi-Agent Memory
         self.used_analogies: Dict[str, list] = {}
+        # Moderation Tracking
+        self.strikes: Dict[str, Dict[str, int]] = {}
 
     async def connect(self, websocket: WebSocket, classroom_id: str, student_id: str, student_name: str):
         if classroom_id not in self.active_connections:
             self.active_connections[classroom_id] = []
+            self.strikes[classroom_id] = {}
         self.active_connections[classroom_id].append(websocket)
         self.connection_names[websocket] = student_name
 
@@ -215,6 +218,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 prof = manager.student_profiles.get(student_id, {"engagement_level": "Unknown"})
                 
                 used_analogies = manager.used_analogies.get(classroom_id, [])
+                current_strikes = manager.strikes.get(classroom_id, {}).get(student_id, 0)
                 
                 state = {
                     "classroom_id": classroom_id,
@@ -227,7 +231,10 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     "chat_history": chat_history_str,
                     "question": data,
                     "context": context,
-                    "used_analogies": used_analogies
+                    "used_analogies": used_analogies,
+                    "strike_count": current_strikes,
+                    "is_disruptive": False,
+                    "is_abusive": False
                 }
                 
                 # Call the Multi-Agent Pipeline
@@ -235,6 +242,21 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     result = classroom_app.invoke(state)
                     manager.used_analogies[classroom_id] = result.get("used_analogies", [])
                     response_text = result.get("final_response", "SILENCE")
+                    
+                    # Check Moderation Output from the Router Node
+                    is_disruptive = result.get("is_disruptive", False)
+                    is_abusive = result.get("is_abusive", False)
+                    
+                    if is_disruptive or is_abusive:
+                        manager.strikes[classroom_id][student_id] = current_strikes + 1
+                        
+                        # If strike count reaches 3, kick them.
+                        if manager.strikes[classroom_id][student_id] >= 3:
+                            kick_msg = f"[SYSTEM] 🚨 {student_name} was kicked from the classroom for continuous disruption/abuse."
+                            await manager.broadcast({"type": "system", "content": kick_msg}, classroom_id)
+                            # Close the websocket for this specific student
+                            await websocket.close(code=1008, reason="Kicked by AI Moderator")
+                            continue
                 except Exception as e:
                     print("Multi-Agent Error:", e)
                     response_text = "SILENCE"
