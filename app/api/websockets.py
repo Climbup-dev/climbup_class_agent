@@ -196,7 +196,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     "student_name": student_name,
                     "student_profile": f"Engagement Level: {prof.get('engagement_level', 'Unknown')}, Total Messages: {prof.get('total_messages_sent', 0)}",
                     "chat_history": "No previous history.",
-                    "question": "[SYSTEM_INIT] Generate a high-quality overview of this PDF and highlight exam-important topics on the board.",
+                    "question": "[SYSTEM_INIT] Welcome the student. DO NOT teach a specific deep concept yet. Your ONLY job right now is to provide a 'Syllabus Overview / Index' of this PDF. List the main topics and highlight 2-3 exam-important areas. Use beautiful Markdown.",
                     "context": context,
                     "used_analogies": [],
                     "strike_count": 0,
