@@ -133,13 +133,16 @@ def router_node(state: ClassroomState) -> Dict[str, Any]:
     JSON Output:
     """)
     
+    safe_question = state.get("question", "").replace("{", "{{").replace("}", "}}")
+    safe_history = state.get("chat_history", "").replace("{", "{{").replace("}", "}}")
+    
     try:
         response = llm_json.invoke(prompt.format(
             subject_name=state["subject_name"],
             topic_name=state["topic_name"],
             student_name=state["student_name"],
-            question=state["question"],
-            chat_history=state["chat_history"]
+            question=safe_question,
+            chat_history=safe_history
         ))
         raw_content = clean_json(response.content)
         result = json.loads(raw_content)
@@ -209,16 +212,21 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     JSON Output:
     """)
     
+    safe_context = state.get("context", "").replace("{", "{{").replace("}", "}}")
+    safe_question = state.get("question", "").replace("{", "{{").replace("}", "}}")
+    safe_history = state.get("chat_history", "").replace("{", "{{").replace("}", "}}")
+    
     formatted_prompt = prompt.format(
         subject_name=state["subject_name"],
         topic_name=state["topic_name"],
         intent_type=state.get("intent_type", "technical_question"),
         student_emotion=state.get("student_emotion", "curious"),
-        specific_need=state.get("specific_need", state["question"]),
-        context=state["context"],
-        question=state["question"],
-        chat_history=state["chat_history"],
-        used_analogies=", ".join(state["used_analogies"]) if state.get("used_analogies") else "None"
+        specific_need=state.get("specific_need", safe_question),
+        context=safe_context,
+        question=safe_question,
+        chat_history=safe_history,
+        used_analogies=", ".join(state["used_analogies"]) if state.get("used_analogies") else "None",
+        student_name=state.get("student_name", "")
     )
     
     try:
