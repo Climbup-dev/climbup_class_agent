@@ -31,7 +31,11 @@ class ClassroomState(TypedDict):
     # Gamification
     awarded_xp: int
     
+    # Smart Router Output
     should_intervene: bool
+    intent_type: str      # technical_question | assignment_extraction | casual_chat | concept_explanation | summary_request | comparison_request | out_of_scope
+    student_emotion: str  # curious | confused | stressed | bored | confident | frustrated
+    specific_need: str    # Precise description of what the student actually wants
     teaching_strategy: str
     image_url: str
     requires_image: bool
@@ -78,81 +82,108 @@ def clean_json(content: Any) -> str:
 
 
 def router_node(state: ClassroomState) -> Dict[str, Any]:
-    """Decides if the AI should intervene based on student messages."""
+    """Mind-Reader Agent: Deeply classifies the student's intent, emotion, and exact need before routing."""
     prompt = PromptTemplate.from_template("""
-    You are the Router Agent for an AI Teacher. 
-    Analyze the following classroom chat to decide if the AI should intervene.
+    You are an expert Student Psychology Analyst and Intent Classifier for an AI Tutor.
+    Your job is to deeply understand what the student ACTUALLY wants — their intent, their emotion, and their specific need.
+    Do NOT answer the question. Just analyze it with precision.
     
-    Rules:
-    - Intervene (True) IF: The student asks a question, seems confused, is completely off-topic, or directly addresses the teacher/AI.
-    - DO NOT Intervene (False) IF: Students are just saying "hi", "ok", or having a quick casual chat among themselves that doesn't need a teacher.
-    - is_disruptive (True) IF: The student is deliberately ignoring the topic, repeatedly talking about unrelated things (like video games, movies), or being disrespectful.
-    - is_abusive (True) IF: The student uses explicit swear words, profanity, gali, or extreme disrespect.
+    Subject: {subject_name} | Topic: {topic_name}
+    Student Name: {student_name}
+    Student Message: {question}
+    Recent Chat History: {chat_history}
     
-    Student Speaking: {student_name}
-    Message: {question}
-    Chat History: {chat_history}
+    ANALYSIS TASK:
+    Respond strictly in JSON format with these keys:
     
-    Respond strictly in JSON format:
-    {{
-        "intervene": true/false,
-        "is_disruptive": true/false,
-        "is_abusive": true/false,
-        "reason": "short reason"
-    }}
+    1. "intent_type": Classify the student's intent into EXACTLY ONE of:
+       - "assignment_extraction": Student wants questions, assignments, or practice problems listed.
+       - "concept_explanation": Student wants a concept explained simply (e.g., "what is X", "explain X").
+       - "comparison_request": Student wants to compare two things (e.g., "difference between A and B").
+       - "summary_request": Student wants a brief summary or overview of a topic.
+       - "technical_question": Student has a specific deep technical question from the syllabus.
+       - "casual_chat": Student is greeting, venting stress, or making small talk.
+       - "abusive": Student is using swear words, profanity, or extreme disrespect.
+       - "disruptive": Student is deliberately ignoring the topic or being disrespectful.
+    
+    2. "student_emotion": Classify into ONE of: "curious", "confused", "stressed", "bored", "confident", "frustrated", "happy".
+    
+    3. "specific_need": In one precise sentence, state EXACTLY what the student wants. This will be passed directly to the Teacher Agent. Be very specific.
+       Examples: 
+       - "Student wants all assignment questions listed from the PDF verbatim."
+       - "Student wants a simple, beginner-friendly explanation of Cybercrime definition."
+       - "Student wants to compare Doctrinal vs Consensual approach to contract law."
+       - "Student is stressed about exams and needs emotional support, not a lesson."
+    
+    4. "should_intervene": true if the AI should respond, false only if the message is a simple "ok", "hmm", or doesn't need a response.
+    
+    JSON Output:
     """)
     
     try:
-        response = llm_json.invoke(prompt.format(**state))
+        response = llm_json.invoke(prompt.format(
+            subject_name=state["subject_name"],
+            topic_name=state["topic_name"],
+            student_name=state["student_name"],
+            question=state["question"],
+            chat_history=state["chat_history"]
+        ))
         raw_content = clean_json(response.content)
         result = json.loads(raw_content)
+        logging.info(f"Router Intent: {result}")
         return {
-            "should_intervene": result.get("intervene", True),
-            "is_disruptive": result.get("is_disruptive", False),
-            "is_abusive": result.get("is_abusive", False)
+            "should_intervene": result.get("should_intervene", True),
+            "intent_type": result.get("intent_type", "technical_question"),
+            "student_emotion": result.get("student_emotion", "curious"),
+            "specific_need": result.get("specific_need", state["question"]),
+            "is_disruptive": result.get("intent_type") == "disruptive",
+            "is_abusive": result.get("intent_type") == "abusive"
         }
     except Exception as e:
         logging.error(f"Router Error: {e}")
-        return {"should_intervene": True, "is_disruptive": False, "is_abusive": False}
+        return {
+            "should_intervene": True,
+            "intent_type": "technical_question",
+            "student_emotion": "curious",
+            "specific_need": state["question"],
+            "is_disruptive": False,
+            "is_abusive": False
+        }
 
 def teacher_node(state: ClassroomState) -> Dict[str, Any]:
-    """Uses Chain of Thought to analyze the student and formulate an elite teaching strategy."""
+    """Laser-Focused Teacher: Uses Router's classified intent to build a surgically precise teaching strategy."""
     prompt = PromptTemplate.from_template("""
-    You are the Master Teacher Agent. Your job is to decide HOW to teach the current topic based ONLY on the provided PDF context.
-    You will use a Chain of Thought process to craft an extremely high-quality, targeted teaching strategy.
+    You are the 'Brain' of a World-Class Master Pedagogue.
+    The Router Agent has already analyzed the student deeply. Use this analysis to craft a LASER-FOCUSED teaching strategy.
+    DO NOT waste time re-analyzing. Act on the classified intent immediately.
     
-    Subject: {subject_name} ({topic_name})
-    Context from PDF:
+    Subject: {subject_name} | Topic: {topic_name}
+    
+    --- ROUTER INTELLIGENCE (Act on this) ---
+    Student's Classified Intent: {intent_type}
+    Student's Emotion Right Now: {student_emotion}
+    What Student ACTUALLY Needs: {specific_need}
+    ----------------------------------------
+    
+    Context from PDF (Use ONLY this. Never hallucinate):
     {context}
     
-    Student Message: {question}
+    Full Student Message (for nuance): {question}
     Chat History: {chat_history}
-    Already Used Analogies (DO NOT REPEAT THESE): {used_analogies}
+    Already Used Analogies (DO NOT REPEAT): {used_analogies}
     
-    MODERATION STATUS:
-    Is the student being disruptive? {is_disruptive}
-    Is the student being abusive/swearing? {is_abusive}
-    Strike Count: {strike_count}/3
-    
-    TASK:
-    Respond strictly in JSON format with the following keys:
-    1. "student_analysis": Briefly analyze the student's current state and intent.
-    2. "pedagogical_decision": Choose EXACTLY ONE from the following options:
-       - CRITICAL RULE 1: If the student asks about a topic NOT found in the 'Context from PDF' below, you MUST choose 'Out of Syllabus'.
-       - CRITICAL RULE 2: If the student asks for 'questions', 'assignment', 'practice problems', 'exam questions', or anything similar, you MUST choose 'Assignment/Question Extraction'. Extract and list ALL questions, case studies, and practice problems VERBATIM from the PDF context. Do NOT make up new questions.
-       - If the student is greeting or sharing feelings/stress, choose 'Casual/Empathetic Chit-Chat'.
-       - If the student is abusive, choose 'Angry Warning'.
-       - If the student is disruptive, choose 'Strict Warning'.
-       - For normal concept questions, choose one of: 'First-Principles Breakdown', 'Real-world Analogy', 'Interactive MCQ Quiz', 'Roleplay Scenario', 'Direct Encouraging Answer'.
-    3. "selected_concept": The exact concept/questions from the PDF context you will address. MUST BE STRICTLY FROM THE PDF.
-    4. "awarded_xp": Award 10 or 20 XP for correct answers, 0 otherwise. Always 0 for 'Assignment/Question Extraction' or 'Casual/Empathetic Chit-Chat'.
-    5. "requires_image": true/false. Set to true ONLY if a visual analogy helps understand the concept. ALWAYS false for 'Assignment/Question Extraction'.
-    6. "strategy": The final instructions (3-4 sentences) for the Persona Agent.
-       - If 'Out of Syllabus': Tell the Persona to politely inform the student that this topic is not in the current PDF.
-       - If 'Assignment/Question Extraction': Tell the Persona to list ALL the extracted questions VERBATIM and clearly numbered on the board. Do not add any extra teaching.
-       - For casual chat: Act like a cool caring mentor, no technical content.
-       - For warnings: Be strict/angry as required.
-       - For conceptual teaching: Give detailed structural breakdown instructions.
+    TASK: Respond in JSON format:
+    1. "awarded_xp": 10 or 20 if student correctly answered a previous challenge, 0 otherwise.
+    2. "requires_image": true ONLY if a visual analogy would genuinely help. False for assignments, comparisons, summaries.
+    3. "strategy": 3-5 sentence precise teaching plan for the Persona Agent. MUST directly address "{specific_need}". 
+       - Match your depth/tone to the student's emotion: If confused → extra simple. If stressed → gentle. If curious → exciting.
+       - For "assignment_extraction": Extract ALL questions/case studies VERBATIM from Context. List them clearly numbered.
+       - For "concept_explanation": Plan a Hook → Simple Breakdown → Fresh Analogy → Micro-Challenge.
+       - For "comparison_request": Build a clear side-by-side comparison with key differences highlighted.
+       - For "summary_request": Extract only key bullet points of the topic. Keep it concise.
+       - For "casual_chat" or emotional support: Be warm, human, and supportive. No technical content.
+       - For "abusive"/"disruptive": Be extremely angry / strictly funny.
+       - If the topic is NOT found in the PDF Context: State 'Out of Syllabus - topic not in PDF'.
     
     JSON Output:
     """)
@@ -160,13 +191,13 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     formatted_prompt = prompt.format(
         subject_name=state["subject_name"],
         topic_name=state["topic_name"],
+        intent_type=state.get("intent_type", "technical_question"),
+        student_emotion=state.get("student_emotion", "curious"),
+        specific_need=state.get("specific_need", state["question"]),
         context=state["context"],
         question=state["question"],
         chat_history=state["chat_history"],
-        used_analogies=", ".join(state["used_analogies"]) if state.get("used_analogies") else "None",
-        is_disruptive=state.get("is_disruptive", False),
-        is_abusive=state.get("is_abusive", False),
-        strike_count=state.get("strike_count", 0)
+        used_analogies=", ".join(state["used_analogies"]) if state.get("used_analogies") else "None"
     )
     
     try:
@@ -174,20 +205,19 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
         raw_content = clean_json(response.content)
         result = json.loads(raw_content)
         strategy = result.get("strategy", "Teach the concept beautifully.")
-        pedagogy = result.get("pedagogical_decision", "")
         awarded_xp = result.get("awarded_xp", 0)
         requires_image = result.get("requires_image", False)
         
-        # Save a snippet of the strategy to avoid repeating
+        # Track used analogies to avoid repetition
         new_analogies = state.get("used_analogies", [])
-        if "analogy" in pedagogy.lower() or "roleplay" in pedagogy.lower():
-            new_analogies.append(strategy[:50] + "...") 
+        if "analogy" in strategy.lower():
+            new_analogies.append(strategy[:60] + "...")
             
-        logging.info(f"Teacher CoT: {result}")
+        logging.info(f"Teacher Strategy: {strategy[:100]}")
         return {"teaching_strategy": strategy, "used_analogies": new_analogies, "awarded_xp": awarded_xp, "requires_image": requires_image}
     except Exception as e:
         logging.error(f"Teacher Error: {e}")
-        return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0, "requires_image": False}
+        return {"teaching_strategy": "Explain the concept from the PDF in a fun and simple way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0, "requires_image": False}
 
 def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     """Generates an image related to the teaching strategy using Pollinations AI."""
@@ -221,16 +251,17 @@ def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     return {"image_url": image_url}
 
 def persona_node(state: ClassroomState) -> Dict[str, Any]:
-    """Formats the final response into highly emotionally intelligent (High EQ), engaging Hinglish with emojis."""
+    """The Actor: Emotionally calibrated response writer that fulfills the student's exact expectation."""
     prompt = PromptTemplate.from_template("""
-    You are the Ultimate 1-on-1 Personal AI Tutor. You have EXTREME Emotional Intelligence (High EQ) and a knack for making complex things painfully simple.
-    Take the Teaching Strategy and format it into the final response for the student.
+    You are the Ultimate 1-on-1 Personal AI Tutor — the Actor who brings the Teaching Strategy to life.
+    Your voice must be emotionally calibrated to the student's current state and laser-focused on their exact need.
     
-    Teaching Strategy: {teaching_strategy}
+    Teaching Strategy (from Teacher Agent): {teaching_strategy}
+    Student's Intent Type: {intent_type}
+    Student's Current Emotion: {student_emotion}
     Student Name: {student_name}
-    Student Profile: {student_profile}
-    Awarded XP: {awarded_xp} XP
-    Image URL to include (if any): {image_url}
+    Awarded XP: {awarded_xp}
+    Image URL (if any): {image_url}
     
     HIGH EQ RULES:
     1. Write in a flawless, natural mix of Hinglish and English. You are their favorite, cool, ultra-smart mentor for ANY subject.
@@ -265,8 +296,9 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     try:
         formatted_prompt = prompt.format(
             teaching_strategy=state["teaching_strategy"],
+            intent_type=state.get("intent_type", "technical_question"),
+            student_emotion=state.get("student_emotion", "curious"),
             student_name=state["student_name"],
-            student_profile=state["student_profile"],
             awarded_xp=state.get("awarded_xp", 0),
             image_url=state.get("image_url", "")
         )
