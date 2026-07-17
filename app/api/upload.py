@@ -42,19 +42,18 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         # LlamaParse handles images natively!
         llama_docs = parser.load_data(file_path)
         
-        full_text = "\n\n".join([doc.text for doc in llama_docs])
+        formatted_pages = []
+        for i, doc in enumerate(llama_docs):
+            page_num = i + 1
+            formatted_pages.append(f"[--- PAGE {page_num} START ---]\n{doc.text}\n[--- PAGE {page_num} END ---]")
+            
+        full_text = "\n\n".join(formatted_pages)
                 
         if not full_text.strip():
              raise ValueError("Could not extract any text or image data from the PDF.")
              
-        document = Document(page_content=full_text, metadata={"classroom_id": classroom_id, "source": file.filename})
-        
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = text_splitter.split_documents([document])
-        
-        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
-        vector_store = FAISS.from_documents(chunks, embeddings)
-        classroom_brains[classroom_id] = vector_store
+        # Save directly to memory (No FAISS)
+        classroom_brains[classroom_id] = full_text
             
         return {"status": "success", "message": f"Successfully uploaded and trained AI on {file.filename} using Gemini OCR!"}
     except Exception as e:
@@ -123,47 +122,29 @@ async def upload_smart_material(
         )
         
         llama_docs = parser.load_data(file_path)
-        full_text = "\n\n".join([doc.text for doc in llama_docs])
+        
+        formatted_pages = []
+        for i, doc in enumerate(llama_docs):
+            page_num = i + 1
+            formatted_pages.append(f"[--- PAGE {page_num} START ---]\n{doc.text}\n[--- PAGE {page_num} END ---]")
+            
+        full_text = "\n\n".join(formatted_pages)
                 
         if not full_text.strip():
              raise ValueError("Could not extract any text or image data from the file.")
              
-        metadata = {
-            "classroom_id": classroom_id, 
-            "university_id": university_id,
-            "branch_id": branch_id,
-            "semester_id": semester_id,
-            "subject_id": subject_id,
-            "topic_title": topic_title,
-            "source": file.filename
-        }
-        document = Document(page_content=full_text, metadata=metadata)
+        # Save directly to memory (No FAISS)
+        classroom_brains[classroom_id] = full_text
         
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = text_splitter.split_documents([document])
-        
-        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
-        vector_store = FAISS.from_documents(chunks, embeddings)
-        classroom_brains[classroom_id] = vector_store
-        
-        # --- FAISS Cloud Backup ---
-        faiss_dir = f"faiss_{classroom_id}"
-        vector_store.save_local(faiss_dir)
-        
-        zip_name = f"{faiss_dir}.zip"
-        shutil.make_archive(faiss_dir, 'zip', faiss_dir)
-        
+        # --- Full Text Cloud Backup ---
         bucket_vector = "vector_stores"
         try:
             supabase_new.storage.create_bucket(bucket_vector, options={"public": False})
         except Exception:
             pass # Bucket exists
             
-        with open(zip_name, "rb") as f:
-            supabase_new.storage.from_(bucket_vector).upload(zip_name, f.read(), {"content-type": "application/zip"})
-            
-        os.remove(zip_name)
-        shutil.rmtree(faiss_dir)
+        txt_path = f"{classroom_id}_fulltext.txt"
+        supabase_new.storage.from_(bucket_vector).upload(txt_path, full_text.encode('utf-8'), {"content-type": "text/plain"})
         # --------------------------
             
         return {

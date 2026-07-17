@@ -147,37 +147,25 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
         if classroom_id not in manager.classroom_history:
             manager.classroom_history[classroom_id] = []
 
-        # --- FAISS Lazy Load & Initial Overview ---
+        # --- Full Text Lazy Load & Initial Overview ---
         try:
-            vector_store = classroom_brains.get(classroom_id)
-            if not vector_store:
+            full_text = classroom_brains.get(classroom_id)
+            if not full_text:
                 try:
                     bucket_vector = "vector_stores"
-                    zip_name = f"faiss_{classroom_id}.zip"
-                    faiss_dir = f"faiss_{classroom_id}"
+                    txt_name = f"{classroom_id}_fulltext.txt"
                     
-                    res = supabase_new.storage.from_(bucket_vector).download(zip_name)
-                    with open(zip_name, "wb") as f:
-                        f.write(res)
-                        
-                    import shutil
-                    import os
-                    shutil.unpack_archive(zip_name, faiss_dir)
+                    res = supabase_new.storage.from_(bucket_vector).download(txt_name)
+                    full_text = res.decode('utf-8')
+                    classroom_brains[classroom_id] = full_text
                     
-                    from langchain_community.vectorstores import FAISS
-                    vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
-                    classroom_brains[classroom_id] = vector_store
-                    
-                    os.remove(zip_name)
-                    shutil.rmtree(faiss_dir)
-                except Exception as faiss_err:
-                    print("Could not lazy load FAISS:", faiss_err)
-                    vector_store = None
+                except Exception as e:
+                    print("Failed to download full text from storage:", e)
+                    full_text = None
             
-            if vector_store:
+            if full_text:
                 # Trigger initial overview
-                docs = vector_store.similarity_search("syllabus overview important topics concepts", k=4)
-                context = "\n".join([doc.page_content for doc in docs])
+                context = full_text
                 
                 ctx = manager.classroom_contexts.get(classroom_id, {"subject_name": "General Topic", "topic_name": "General Lecture"})
                 prof = manager.student_profiles.get(student_id, {"engagement_level": "Unknown"})
@@ -240,12 +228,10 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             # })
             
             try:
-                vector_store = classroom_brains.get(classroom_id)
-                # FAISS is loaded at connection time. Just get it.
-
-                if vector_store:
-                    docs = vector_store.similarity_search(data, k=6)
-                    context = "\n".join([doc.page_content for doc in docs])
+                full_text = classroom_brains.get(classroom_id)
+                
+                if full_text:
+                    context = full_text
                 else:
                     context = "No specific lecture material found. Please ask the teacher to upload a PDF."
                 
