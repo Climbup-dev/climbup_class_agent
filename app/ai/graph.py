@@ -170,13 +170,12 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     """Laser-Focused Teacher: Uses Router's classified intent to build a surgically precise teaching strategy."""
     prompt = PromptTemplate(
         template="""You are the Brain (Teacher Agent) of a highly advanced intelligent classroom.
-    You have been provided with the ENTIRE FULL TEXT of the student's study material below. You have perfect visibility of every page and line.
     
     Student: {student_name}
     Emotion/State: {student_emotion}
     Class: {subject_name} ({topic_name})
     
-    FULL STUDY MATERIAL CONTEXT (Pay attention to the [--- PAGE X ---] markers):
+    STUDY MATERIAL CONTEXT (Retrieved Chunks from Vector Database):
     {context}
     
     You are the 'Brain' of a World-Class Master Pedagogue.
@@ -203,9 +202,9 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     2. "requires_image": true ONLY if a visual analogy would genuinely help. False for assignments, comparisons, summaries.
     3. "strategy": 3-5 sentence precise teaching plan for the Persona Agent. MUST directly address "{specific_need}". 
        - Be FLUID and NATURAL. Give the student EXACTLY what they asked for.
-       - HIGH-PRECISION GROUNDING: If the student asks about a specific concept, locate it in the text. You MUST cite the EXACT PAGE (e.g. "As seen on Page 4...") and quote the exact sentence verbatim before explaining it.
+       - HIGH-PRECISION GROUNDING: If the student asks about a specific concept found in the PDF, quote the exact sentence verbatim and base your explanation strictly on it.
        - EXTERNAL/APPLICATION QUESTIONS: If the student asks to solve a specific case study (e.g., Suhas Katti) that is NOT in the PDF, DO NOT say "Out of syllabus" and refuse. Instead, acknowledge it's an external case, but use the core theories from the PDF (e.g., Jurisdiction approaches) to brilliantly solve and analyze their exact question.
-       - If they asked for a LIST of questions, just list them verbatim with their page numbers.
+       - If they asked for a LIST of questions, just list them verbatim.
        - Match your depth/tone to the student's emotion: If confused → extra simple. If stressed → gentle. If curious → exciting.
        - For conceptual teaching: Plan a Hook → Simple Breakdown → Fresh Analogy → Micro-Challenge.
     
