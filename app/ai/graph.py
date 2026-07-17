@@ -83,6 +83,19 @@ def clean_json(content: Any) -> str:
 
 def router_node(state: ClassroomState) -> Dict[str, Any]:
     """Mind-Reader Agent: Deeply classifies the student's intent, emotion, and exact need before routing."""
+    
+    # HARDCODED BYPASS FOR SYSTEM STARTUP
+    # This guarantees zero hallucination and blazing fast load times for the initial syllabus overview.
+    if "[SYSTEM_INIT]" in state.get("question", ""):
+        return {
+            "should_intervene": True,
+            "intent_type": "summary_request",
+            "student_emotion": "curious",
+            "specific_need": "Student has just opened the chat. Extract a highly engaging Syllabus Overview and list the most important exam topics from the PDF.",
+            "is_disruptive": False,
+            "is_abusive": False
+        }
+        
     prompt = PromptTemplate.from_template("""
     You are an expert Student Psychology Analyst and Intent Classifier for an AI Tutor.
     Your job is to deeply understand what the student ACTUALLY wants — their intent, their emotion, and their specific need.
