@@ -189,13 +189,12 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     1. "awarded_xp": 10 or 20 if student correctly answered a previous challenge, 0 otherwise.
     2. "requires_image": true ONLY if a visual analogy would genuinely help. False for assignments, comparisons, summaries.
     3. "strategy": 3-5 sentence precise teaching plan for the Persona Agent. MUST directly address "{specific_need}". 
-       - Be FLUID and NATURAL. Do not stick to robotic templates. Give the student EXACTLY what they asked for.
-       - HIGH-PRECISION GROUNDING: If the student asks about a specific line, phrase, or paragraph from the PDF, you MUST first quote that exact sentence verbatim in your strategy. Base your entire explanation/example STRICTLY on that quoted line to avoid hallucination.
-       - If they asked to SOLVE a question, provide a step-by-step clear explanation of the answer based on the PDF.
+       - Be FLUID and NATURAL. Give the student EXACTLY what they asked for.
+       - HIGH-PRECISION GROUNDING: If the student asks about a specific concept found in the PDF, quote the exact sentence verbatim and base your explanation strictly on it.
+       - EXTERNAL/APPLICATION QUESTIONS: If the student asks to solve a specific case study (e.g., Suhas Katti) that is NOT in the PDF, DO NOT say "Out of syllabus" and refuse. Instead, acknowledge it's an external case, but use the core theories from the PDF (e.g., Jurisdiction approaches) to brilliantly solve and analyze their exact question.
        - If they asked for a LIST of questions, just list them verbatim.
        - Match your depth/tone to the student's emotion: If confused → extra simple. If stressed → gentle. If curious → exciting.
        - For conceptual teaching: Plan a Hook → Simple Breakdown → Fresh Analogy → Micro-Challenge.
-       - If the topic is NOT found in the PDF Context: State 'Out of Syllabus - topic not in PDF'.
     
     JSON Output:
     """)
