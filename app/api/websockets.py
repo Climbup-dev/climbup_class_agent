@@ -250,7 +250,9 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 try:
                     result = classroom_app.invoke(state)
                     manager.used_analogies[classroom_id] = result.get("used_analogies", [])
-                    response_text = result.get("final_response", "SILENCE")
+                    
+                    board_content = result.get("board_content", "")
+                    chat_content = result.get("chat_content", "SILENCE")
                     
                     # Check Moderation Output from the Router Node
                     is_disruptive = result.get("is_disruptive", False)
@@ -291,13 +293,15 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                             
                 except Exception as e:
                     print("Multi-Agent Error:", e)
-                    response_text = "SILENCE"
+                    chat_content = "SILENCE"
+                    board_content = ""
                 
                 # If AI decides not to speak, do nothing.
-                if response_text.upper() == "SILENCE" or "SILENCE" in response_text[:10].upper():
-                    continue
+                if chat_content.upper() == "SILENCE" or "SILENCE" in chat_content[:10].upper():
+                    if not board_content:
+                        continue
                 
-                manager.classroom_history[classroom_id].append(f"AI Teacher: {response_text}")
+                manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
                 
                 # Save AI message to Supabase
                 try:
@@ -306,18 +310,20 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                         "sender_id": None,
                         "sender_type": "ai",
                         "sender_name": "AI Teacher",
-                        "content": response_text
+                        "content": chat_content
                     }).execute()
                 except Exception as e:
                     pass
 
             except Exception as e:
-                response_text = f"I'm sorry, my AI brain encountered an error: {str(e)}"
+                chat_content = f"I'm sorry, my AI brain encountered an error: {str(e)}"
+                board_content = ""
 
             await manager.broadcast({
-                "type": "chat",
+                "type": "teaching",
                 "sender": "AI Teacher",
-                "content": response_text
+                "chat_content": chat_content,
+                "board_content": board_content
             }, classroom_id)
             
     except WebSocketDisconnect:

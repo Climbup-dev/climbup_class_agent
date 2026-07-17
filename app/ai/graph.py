@@ -228,9 +228,13 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     
     4. Praise Naturally: ONLY praise them if they actually answered a technical question correctly. Give context-aware, genuine compliments.
     5. Keep paragraphs short (1-2 lines). Break up large text.
-    6. If an Image URL is provided, include it exactly like this at the very end: ![Visual]({image_url})
+    6. If an Image URL is provided, include it exactly like this at the very end of the board_content: ![Visual]({image_url})
     
-    Final Response:
+    RESPOND STRICTLY IN JSON FORMAT WITH THESE KEYS:
+    {{
+        "board_content": "The main technical teaching, markdown, deep analogies, code, and Image URL. Leave EMPTY if this is just casual chat, warning, or greeting.",
+        "chat_content": "Short, highly emotional Hinglish chat response for the live chat. Includes jokes, warnings, or XP celebrations."
+    }}
     """)
     
     try:
@@ -241,11 +245,16 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
             awarded_xp=state.get("awarded_xp", 0),
             image_url=state.get("image_url", "")
         )
-        response = llm.invoke(formatted_prompt)
-        return {"final_response": extract_text(response.content).strip()}
+        response = llm_json.invoke(formatted_prompt)
+        raw_content = clean_json(response.content)
+        result = json.loads(raw_content)
+        return {
+            "board_content": result.get("board_content", ""),
+            "chat_content": result.get("chat_content", "")
+        }
     except Exception as e:
         logging.error(f"Persona Error: {e}")
-        return {"final_response": "I'm having a little trouble thinking right now. Could you repeat that?"}
+        return {"board_content": "", "chat_content": "I'm having a little trouble thinking right now. Could you repeat that?"}
 
 # Define routing logic
 def route_after_router(state: ClassroomState) -> str:
