@@ -2,6 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from duckduckgo_search import DDGS
 import json
 import logging
@@ -31,14 +32,25 @@ class ClassroomState(TypedDict):
     
     should_intervene: bool
     teaching_strategy: str
-    image_url: str
-    final_response: str
+import os
 
-# Initialize Groq
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-llm_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
+# 1. Primary: Groq Llama 3 70B (Fast but strict rate limits)
+llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+llm_groq_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
 
-# Helper function to clean JSON from Groq output (in case it still adds markdown)
+# 2. Fallback: OpenRouter Llama 3 8B (Cheap and reliable)
+llm_openrouter = ChatOpenAI(
+    model="meta-llama/llama-3-8b-instruct:free", 
+    openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
+    openai_api_base="https://openrouter.ai/api/v1",
+    temperature=0.7
+)
+
+# Build the Unbreakable Brain
+llm = llm_groq.with_fallbacks([llm_openrouter])
+llm_json = llm_groq_json.with_fallbacks([llm_openrouter])
+
+# Helper function to clean JSON from any model output
 def clean_json(text: str) -> str:
     return text.replace("```json", "").replace("```", "").strip()
 

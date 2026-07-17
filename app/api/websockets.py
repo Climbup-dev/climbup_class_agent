@@ -3,7 +3,7 @@ from typing import Dict, List
 import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 import os
 from langchain_core.prompts import PromptTemplate
 from app.core.memory import classroom_brains
@@ -83,7 +83,14 @@ class ConnectionManager:
         except Exception as e:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
-        self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+        llm_primary = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+        llm_fallback = ChatOpenAI(
+            model="meta-llama/llama-3-8b-instruct:free", 
+            openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
+            openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0.7
+        )
+        self.llm = llm_primary.with_fallbacks([llm_fallback])
         self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):
