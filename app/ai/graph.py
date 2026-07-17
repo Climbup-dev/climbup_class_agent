@@ -2,6 +2,8 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from duckduckgo_search import DDGS
 import json
 import logging
@@ -33,9 +35,24 @@ class ClassroomState(TypedDict):
     teaching_strategy: str
 import os
 
-# 1. Primary: Gemini 3.1 Flash Lite (Huge Free Tier)
-llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
-llm_json = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+# 1. Primary: Gemini 3.1 Flash Lite (Huge Free Tier: 1500 RPD, 15 RPM)
+llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+
+# 2. Fallback 1: Groq Llama 3 70B (Fast but strict daily limits)
+llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+llm_groq_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
+
+# 3. Fallback 2: OpenRouter Llama 3 8B (Safety net, highly reliable)
+llm_openrouter = ChatOpenAI(
+    model="meta-llama/llama-3-8b-instruct:free", 
+    openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
+    openai_api_base="https://openrouter.ai/api/v1",
+    temperature=0.7
+)
+
+# Build the Ultimate Unbreakable Brain
+llm = llm_gemini.with_fallbacks([llm_groq, llm_openrouter])
+llm_json = llm_gemini.with_fallbacks([llm_groq_json, llm_openrouter])
 
 # Helper function to clean JSON from any model output
 def clean_json(text: str) -> str:

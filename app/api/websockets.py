@@ -3,7 +3,8 @@ from typing import Dict, List
 import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import OpenAIEmbeddings
+from langchain_groq import ChatGroq
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 import os
 from langchain_core.prompts import PromptTemplate
 from app.core.memory import classroom_brains
@@ -83,7 +84,15 @@ class ConnectionManager:
         except Exception as e:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
-        self.llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+        llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+        llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+        llm_openrouter = ChatOpenAI(
+            model="meta-llama/llama-3-8b-instruct:free", 
+            openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
+            openai_api_base="https://openrouter.ai/api/v1",
+            temperature=0.7
+        )
+        self.llm = llm_gemini.with_fallbacks([llm_groq, llm_openrouter])
         self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):
