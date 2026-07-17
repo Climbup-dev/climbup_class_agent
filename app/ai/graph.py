@@ -1,7 +1,7 @@
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from duckduckgo_search import DDGS
 import json
 import logging
@@ -34,11 +34,11 @@ class ClassroomState(TypedDict):
     image_url: str
     final_response: str
 
-# Initialize Gemini
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
-llm_json = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+# Initialize Groq
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
+llm_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
 
-# Helper function to clean JSON from Gemini output
+# Helper function to clean JSON from Groq output (in case it still adds markdown)
 def clean_json(text: str) -> str:
     return text.replace("```json", "").replace("```", "").strip()
 
