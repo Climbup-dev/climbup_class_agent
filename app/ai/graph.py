@@ -190,6 +190,7 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     2. "requires_image": true ONLY if a visual analogy would genuinely help. False for assignments, comparisons, summaries.
     3. "strategy": 3-5 sentence precise teaching plan for the Persona Agent. MUST directly address "{specific_need}". 
        - Be FLUID and NATURAL. Do not stick to robotic templates. Give the student EXACTLY what they asked for.
+       - HIGH-PRECISION GROUNDING: If the student asks about a specific line, phrase, or paragraph from the PDF, you MUST first quote that exact sentence verbatim in your strategy. Base your entire explanation/example STRICTLY on that quoted line to avoid hallucination.
        - If they asked to SOLVE a question, provide a step-by-step clear explanation of the answer based on the PDF.
        - If they asked for a LIST of questions, just list them verbatim.
        - Match your depth/tone to the student's emotion: If confused → extra simple. If stressed → gentle. If curious → exciting.
@@ -287,7 +288,8 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
        - Step 3: THE ANALOGY 📖 - Invent a fresh real-world analogy.
        - Step 4: THE MICRO-CHALLENGE 🎯 - Ask a quick test question.
     
-    4. Code & Technical Diagrams: 
+    4. Code, Quotes & Technical Diagrams: 
+       - If the Teaching Strategy quotes a specific line from the PDF, you MUST display that quote prominently on the board using Markdown quote blocks (e.g., `> "The quoted text..."`) before explaining it.
        - If the topic involves PROGRAMMING/CODING, write the code using Markdown fenced code blocks (```python ... ```).
        - If the topic requires a flowchart or table, draw it using Markdown tables or ASCII art in the `board_content`.
        

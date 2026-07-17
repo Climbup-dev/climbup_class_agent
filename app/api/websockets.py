@@ -244,7 +244,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 # FAISS is loaded at connection time. Just get it.
 
                 if vector_store:
-                    docs = vector_store.similarity_search(data, k=5)
+                    docs = vector_store.similarity_search(data, k=6)
                     context = "\n".join([doc.page_content for doc in docs])
                 else:
                     context = "No specific lecture material found. Please ask the teacher to upload a PDF."
