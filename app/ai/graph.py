@@ -35,8 +35,8 @@ class ClassroomState(TypedDict):
     teaching_strategy: str
 import os
 
-# 1. Primary: Gemini 1.5 Flash (Huge Free Tier: 1500 RPD)
-llm_gemini = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+# 1. Primary: Gemini 3.1 Flash Lite (Huge Free Tier)
+llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
 
 # 2. Fallback 1: Groq Llama 3 70B (Fast but strict rate limits)
 llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)

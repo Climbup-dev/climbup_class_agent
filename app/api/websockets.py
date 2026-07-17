@@ -84,7 +84,7 @@ class ConnectionManager:
         except Exception as e:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
-        llm_gemini = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+        llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
         llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
         llm_openrouter = ChatOpenAI(
             model="meta-llama/llama-3-8b-instruct:free", 
