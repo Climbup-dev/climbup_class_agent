@@ -32,6 +32,9 @@ class ClassroomState(TypedDict):
     awarded_xp: int
     
     should_intervene: bool
+    teaching_strategy: str
+    image_url: str
+    
     # Final Output
     board_content: str
     chat_content: str
