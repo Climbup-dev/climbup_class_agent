@@ -144,11 +144,6 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
     await manager.connect(websocket, classroom_id, student_id, student_name)
     
     try:
-        # Welcome message to the user directly
-        await websocket.send_json({
-            "type": "system",
-            "content": f"Welcome to your personal study room, {student_name}!"
-        })
         if classroom_id not in manager.classroom_history:
             manager.classroom_history[classroom_id] = []
 
