@@ -255,8 +255,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             
             try:
                 vector_store = classroom_brains.get(classroom_id)
-                    # FAISS is loaded at connection time. Just get it.
-                    vector_store = None
+                # FAISS is loaded at connection time. Just get it.
 
                 if vector_store:
                     docs = vector_store.similarity_search(data, k=3)
