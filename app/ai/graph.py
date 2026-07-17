@@ -184,12 +184,12 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
         return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0}
 
 def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
-    """Fetches an image related to the teaching strategy using DuckDuckGo."""
+    """Generates an image related to the teaching strategy using Pollinations AI."""
     strategy = state.get("teaching_strategy", "")
     
     keyword_prompt = PromptTemplate.from_template("""
-    Extract ONE short, highly visual search keyword (2-3 words max) from the following teaching strategy. 
-    It should be an object or scenario (e.g., "bank locker", "hospital database", "shopping mall").
+    Extract ONE short, highly visual search keyword (2-4 words max) from the following teaching strategy. 
+    It should be an object or scenario (e.g., "bank hacker", "hospital database", "shopping mall").
     Strategy: {strategy}
     Keyword only:
     """)
@@ -197,10 +197,13 @@ def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     try:
         raw_text = extract_text(llm.invoke(keyword_prompt.format(strategy=strategy)).content)
         keyword = raw_text.strip().strip('"')
-        results = DDGS().images(keyword, max_results=1)
-        image_url = results[0].get("image", "") if results else ""
+        
+        import urllib.parse
+        encoded_keyword = urllib.parse.quote(keyword)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_keyword}?width=800&height=400&nologo=true"
+        
     except Exception as e:
-        logging.error(f"Image Search failed: {e}")
+        logging.error(f"Image Generation failed: {e}")
         image_url = ""
         
     return {"image_url": image_url}
@@ -237,7 +240,7 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     
     RESPOND STRICTLY IN JSON FORMAT WITH THESE KEYS:
     {{
-        "board_content": "The main technical teaching, markdown, deep analogies, code, and Image URL. Leave EMPTY if this is just casual chat, warning, or greeting.",
+        "board_content": "The main technical teaching. MUST USE BEAUTIFUL MARKDOWN (like # Headings, **Bold**, bullet points). Include analogies and the Image URL at the end. Leave EMPTY if this is casual chat.",
         "chat_content": "Short, highly emotional Hinglish chat response for the live chat. Includes jokes, warnings, or XP celebrations."
     }}
     """)
