@@ -34,6 +34,7 @@ class ClassroomState(TypedDict):
     should_intervene: bool
     teaching_strategy: str
     image_url: str
+    requires_image: bool
     
     # Final Output
     board_content: str
@@ -135,17 +136,16 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     
     TASK:
     Respond strictly in JSON format with the following keys:
-    1. "student_analysis": Briefly analyze the student's current state. Are they confused, bored, curious, deliberately disruptive, abusive, or just wanting to chit-chat/greet?
-    2. "pedagogical_decision": Decide the best approach. 
-       - If they are greeting you or sharing feelings/stress, choose "Casual/Empathetic Chit-Chat". 
-       - If they are abusive, choose "Angry Warning". 
-       - If they are disruptive, choose "Strict Warning". 
+    1. "student_analysis": Briefly analyze the student's current state.
+    2. "pedagogical_decision": 
+       - CRITICAL RULE: If the student asks about a topic NOT found in the 'Context from PDF' below, you MUST choose 'Out of Syllabus' and refuse to teach it. DO NOT HALLUCINATE OUTSIDE THE CONTEXT.
        - Otherwise choose "First-Principles Breakdown", "Real-world Analogy", "Interactive MCQ Quiz", "Roleplay Scenario", or "Direct Encouraging Answer".
-    3. "selected_concept": The exact technical fact/concept from the PDF context you will teach right now. MUST BE STRICTLY FROM THE PDF. DO NOT HALLUCINATE OUTSIDE CONTEXT. If giving a warning OR doing "Casual/Empathetic Chit-Chat", leave this EMPTY ("").
-    4. "awarded_xp": If the student correctly answered a previous technical question/challenge you gave them, award 10 XP. If it was an exceptionally brilliant answer, award 20 XP. If they gave a wrong answer, were off-topic, or just chit-chatting, award 0 XP. (Must be an integer: 0, 10, or 20).
-    5. "strategy": The final instructions (3-4 sentences) for the Persona Agent. 
-       - Give extremely detailed instructions on how to break down the concept structurally (e.g., "Explain it in 3 steps", "Use the analogy of a water pipe").
-       - Emphasize deep conceptual clarity so the student says 'WOW, that was easy!'.
+    3. "selected_concept": The exact technical fact/concept from the PDF context you will teach right now. MUST BE STRICTLY FROM THE PDF.
+    4. "awarded_xp": Award 10 or 20 XP for correct answers, 0 otherwise.
+    5. "requires_image": true/false. Set to true ONLY if a visual *analogy* (like a bank vault or post office) helps. Set to false for abstract theories or if technical flowcharts/diagrams are needed (AI image generators cannot do text/diagrams).
+    6. "strategy": The final instructions (3-4 sentences) for the Persona Agent. 
+       - If "Out of Syllabus", tell the Persona to politely inform the student that this topic is not in the current PDF notes.
+       - Otherwise, give extremely detailed instructions on how to break down the concept structurally. Give generalized prompts (e.g., "Use an everyday analogy"), do NOT give specific hardcoded examples (like "water pipe" or "bank hacker"), let the Persona invent a relevant one.
        - If awarded_xp > 0: Instruct the Persona to enthusiastically congratulate them for earning XP before continuing.
        - If "Casual/Empathetic Chit-Chat": Instruct the Persona to act like a cool, caring mentor. Validate their feelings, relieve their stress, and DO NOT force any PDF teaching in this message.
        - If abusive: Instruct the Persona to react like an EXTREMELY ANGRY MAN (Bhai, tameez se baat kar!).
@@ -173,6 +173,7 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
         strategy = result.get("strategy", "Teach the concept beautifully.")
         pedagogy = result.get("pedagogical_decision", "")
         awarded_xp = result.get("awarded_xp", 0)
+        requires_image = result.get("requires_image", False)
         
         # Save a snippet of the strategy to avoid repeating
         new_analogies = state.get("used_analogies", [])
@@ -180,13 +181,16 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
             new_analogies.append(strategy[:50] + "...") 
             
         logging.info(f"Teacher CoT: {result}")
-        return {"teaching_strategy": strategy, "used_analogies": new_analogies, "awarded_xp": awarded_xp}
+        return {"teaching_strategy": strategy, "used_analogies": new_analogies, "awarded_xp": awarded_xp, "requires_image": requires_image}
     except Exception as e:
         logging.error(f"Teacher Error: {e}")
-        return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0}
+        return {"teaching_strategy": "Explain the concept from the PDF in a fun way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0, "requires_image": False}
 
 def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     """Generates an image related to the teaching strategy using Pollinations AI."""
+    if not state.get("requires_image", False):
+        return {"image_url": ""}
+        
     strategy = state.get("teaching_strategy", "")
     
     keyword_prompt = PromptTemplate.from_template("""
@@ -236,18 +240,18 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     
     3. THE WOW-FACTOR TEACHING FRAMEWORK (Only apply this if you are teaching a concept):
        - Step 1: THE HOOK 🪝 - Start with a relatable problem or a shocking question.
-       - Step 2: THE DEEP BREAKDOWN 🧠 - Use First Principles. Break the concept into bite-sized, incredibly simple steps (Step 1, Step 2, Step 3). Use bullet points and Markdown headings.
-       - Step 3: THE ANALOGY 📖 - Explain it using a real-world example. Connect emotions to the logic.
-       - Step 4: THE MICRO-CHALLENGE 🎯 - NEVER end with "Did you understand?". End with a fun scenario-based question that forces them to apply what they just learned.
+       - Step 2: THE DEEP BREAKDOWN 🧠 - Break the concept into bite-sized steps (Step 1, Step 2, Step 3). 
+       - Step 3: THE ANALOGY 📖 - Invent a fresh, highly relatable real-world analogy. 
+       - Step 4: THE MICRO-CHALLENGE 🎯 - End with a fun scenario-based question to test them.
     
-    4. Praise Naturally: ONLY praise them if they actually answered a technical question correctly.
+    4. Technical Diagrams vs Digital Art: If the topic requires a flowchart, architecture diagram, or table (like TCP/IP layers), DO NOT rely on the Image URL. You MUST draw it yourself using Markdown tables or ASCII art in the `board_content`.
     5. Board Formatting: The `board_content` MUST BE STUNNING. Use `# Headers`, `**Bold text**`, `>` quotes, and clear spacing. Make it look like a beautifully designed study note.
     6. If an Image URL is provided, include it exactly like this at the very end of the board_content: ![Visual]({image_url})
     
     RESPOND STRICTLY IN JSON FORMAT WITH THESE KEYS:
     {{
-        "board_content": "The main technical teaching. MUST USE BEAUTIFUL MARKDOWN (like # Headings, **Bold**, bullet points). Include analogies and the Image URL at the end. Leave EMPTY if this is casual chat.",
-        "chat_content": "Short, highly emotional Hinglish chat response for the live chat. Includes jokes, warnings, or XP celebrations."
+        "board_content": "The main technical teaching. MUST USE BEAUTIFUL MARKDOWN. Include technical diagrams (ASCII/Tables) if needed, and the Image URL at the end. Leave EMPTY if this is casual chat.",
+        "chat_content": "Short, highly emotional Hinglish chat response for the live chat. If board_content is heavy, chat_content MUST just be a short pointer like 'Look at the board!'. Includes jokes, warnings, or XP celebrations."
     }}
     """)
     

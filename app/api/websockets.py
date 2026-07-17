@@ -152,6 +152,76 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
         if classroom_id not in manager.classroom_history:
             manager.classroom_history[classroom_id] = []
 
+        # --- FAISS Lazy Load & Initial Overview ---
+        try:
+            vector_store = classroom_brains.get(classroom_id)
+            if not vector_store:
+                try:
+                    bucket_vector = "vector_stores"
+                    zip_name = f"faiss_{classroom_id}.zip"
+                    faiss_dir = f"faiss_{classroom_id}"
+                    
+                    res = supabase_new.storage.from_(bucket_vector).download(zip_name)
+                    with open(zip_name, "wb") as f:
+                        f.write(res)
+                        
+                    import shutil
+                    import os
+                    shutil.unpack_archive(zip_name, faiss_dir)
+                    
+                    from langchain_community.vectorstores import FAISS
+                    vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
+                    classroom_brains[classroom_id] = vector_store
+                    
+                    os.remove(zip_name)
+                    shutil.rmtree(faiss_dir)
+                except Exception as faiss_err:
+                    print("Could not lazy load FAISS:", faiss_err)
+                    vector_store = None
+            
+            if vector_store:
+                # Trigger initial overview
+                docs = vector_store.similarity_search("syllabus overview important topics concepts", k=4)
+                context = "\n".join([doc.page_content for doc in docs])
+                
+                ctx = manager.classroom_contexts.get(classroom_id, {"subject_name": "General Topic", "topic_name": "General Lecture"})
+                prof = manager.student_profiles.get(student_id, {"engagement_level": "Unknown"})
+                
+                state = {
+                    "classroom_id": classroom_id,
+                    "subject_name": ctx["subject_name"],
+                    "topic_name": ctx["topic_name"],
+                    "lecture_date": ctx.get("lecture_date", "Today"),
+                    "active_students": student_name,
+                    "student_name": student_name,
+                    "student_profile": f"Engagement Level: {prof.get('engagement_level', 'Unknown')}, Total Messages: {prof.get('total_messages_sent', 0)}",
+                    "chat_history": "No previous history.",
+                    "question": "[SYSTEM_INIT] Generate a high-quality overview of this PDF and highlight exam-important topics on the board.",
+                    "context": context,
+                    "used_analogies": [],
+                    "strike_count": 0,
+                    "is_disruptive": False,
+                    "is_abusive": False
+                }
+                
+                result = classroom_app.invoke(state)
+                board_content = result.get("board_content", "")
+                chat_content = result.get("chat_content", "SILENCE")
+                
+                await websocket.send_json({
+                    "type": "teaching",
+                    "sender": "AI Teacher",
+                    "chat_content": chat_content,
+                    "board_content": board_content
+                })
+                
+                if chat_content.upper() != "SILENCE" and "SILENCE" not in chat_content[:10].upper():
+                    manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
+                    
+        except Exception as init_err:
+            print("Init Error:", init_err)
+        # ------------------------------------------
+
         while True:
             data = await websocket.receive_text()
             
@@ -185,32 +255,8 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             
             try:
                 vector_store = classroom_brains.get(classroom_id)
-                if not vector_store:
-                    # --- FAISS Lazy Load from Supabase ---
-                    try:
-                        bucket_vector = "vector_stores"
-                        zip_name = f"faiss_{classroom_id}.zip"
-                        faiss_dir = f"faiss_{classroom_id}"
-                        
-                        res = supabase_new.storage.from_(bucket_vector).download(zip_name)
-                        with open(zip_name, "wb") as f:
-                            f.write(res)
-                            
-                        import shutil
-                        import os
-                        shutil.unpack_archive(zip_name, faiss_dir)
-                        
-                        from langchain_community.vectorstores import FAISS
-                        # Manager embeddings was initialized in connect()
-                        vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
-                        classroom_brains[classroom_id] = vector_store
-                        
-                        os.remove(zip_name)
-                        shutil.rmtree(faiss_dir)
-                    except Exception as faiss_err:
-                        print("Could not lazy load FAISS:", faiss_err)
-                        vector_store = None
-                    # -------------------------------------
+                    # FAISS is loaded at connection time. Just get it.
+                    vector_store = None
 
                 if vector_store:
                     docs = vector_store.similarity_search(data, k=3)
