@@ -27,13 +27,13 @@ def generate_classroom_response(
         
     topic = classroom.topic or "General Lecture"
     
-    # 2. Retrieve Context via RAG
-    retrieved_context = retrieve_context(query=student_query, classroom_id=classroom_id, top_k=3)
+    # 2. Get Recent Chat History FIRST so we can use it for Query Reformulation
+    chat_history = get_recent_chat_history(db, classroom_id, limit=10)
+    
+    # 3. Retrieve Context via Optimized RAG (passes chat history)
+    retrieved_context = retrieve_context(query=student_query, classroom_id=classroom_id, chat_history=chat_history, top_k=3)
     if not retrieved_context.strip():
         retrieved_context = "No specific context found from uploaded materials."
-
-    # 3. Get Recent Chat History
-    chat_history = get_recent_chat_history(db, classroom_id, limit=10)
     
     # 4. Construct System Prompt
     system_prompt = get_master_agent_prompt(topic=topic, active_students=active_students)
