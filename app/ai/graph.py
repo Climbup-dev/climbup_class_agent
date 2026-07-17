@@ -244,7 +244,10 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
        - Step 3: THE ANALOGY 📖 - Invent a fresh, highly relatable real-world analogy. 
        - Step 4: THE MICRO-CHALLENGE 🎯 - End with a fun scenario-based question to test them.
     
-    4. Technical Diagrams vs Digital Art: If the topic requires a flowchart, architecture diagram, or table (like TCP/IP layers), DO NOT rely on the Image URL. You MUST draw it yourself using Markdown tables or ASCII art in the `board_content`.
+    4. Code & Technical Diagrams: 
+       - If the topic involves PROGRAMMING/CODING, you MUST write the code using Markdown fenced code blocks (e.g., ```python ... ```). Keep code snippets short, optimized, and beautifully formatted.
+       - If the topic requires a flowchart, architecture diagram, or table (like TCP/IP layers), DO NOT rely on the Image URL. You MUST draw it yourself using Markdown tables or ASCII art in the `board_content`.
+       
     5. Board Formatting: The `board_content` MUST BE STUNNING. Use `# Headers`, `**Bold text**`, `>` quotes, and clear spacing. Make it look like a beautifully designed study note.
     6. If an Image URL is provided, include it exactly like this at the very end of the board_content: ![Visual]({image_url})
     

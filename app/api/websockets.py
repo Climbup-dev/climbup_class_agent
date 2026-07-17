@@ -227,16 +227,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             
             manager.classroom_history[classroom_id].append(f"{student_name}: {data}")
             
-            # Save student message to Supabase
             try:
-                supabase_new.table('messages').insert({
-                    "session_id": classroom_id,
-                    "sender_id": student_id,
-                    "sender_type": "student",
-                    "sender_name": student_name,
-                    "content": data
-                }).execute()
-                
                 # Update engagement stats
                 prof = manager.student_profiles.get(student_id, {})
                 if prof:
@@ -338,18 +329,6 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                         continue
                 
                 manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
-                
-                # Save AI message to Supabase
-                try:
-                    supabase_new.table('messages').insert({
-                        "session_id": classroom_id,
-                        "sender_id": None,
-                        "sender_type": "ai",
-                        "sender_name": "AI Teacher",
-                        "content": chat_content
-                    }).execute()
-                except Exception as e:
-                    pass
 
             except Exception as e:
                 chat_content = f"I'm sorry, my AI brain encountered an error: {str(e)}"
