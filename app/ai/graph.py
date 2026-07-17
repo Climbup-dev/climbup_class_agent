@@ -35,14 +35,13 @@ class ClassroomState(TypedDict):
     teaching_strategy: str
 import os
 
-# 1. Primary: Gemini 3.1 Flash Lite (Huge Free Tier: 1500 RPD, 15 RPM)
-llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+import os
 
-# 2. Fallback 1: Groq Llama 3 70B (Fast but strict daily limits)
+# 1. Primary: Groq Llama 3 70B (Fast, High Quality)
 llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
 llm_groq_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
 
-# 3. Fallback 2: OpenRouter Llama 3 8B (Safety net, highly reliable)
+# 2. Fallback 1: OpenRouter Llama 3 8B (Safety net, highly reliable)
 llm_openrouter = ChatOpenAI(
     model="meta-llama/llama-3-8b-instruct:free", 
     openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
@@ -50,13 +49,27 @@ llm_openrouter = ChatOpenAI(
     temperature=0.7
 )
 
-# Build the Ultimate Unbreakable Brain
-llm = llm_gemini.with_fallbacks([llm_groq, llm_openrouter])
-llm_json = llm_gemini.with_fallbacks([llm_groq_json, llm_openrouter])
+# 3. Fallback 2: Gemini 3.1 Flash Lite
+llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
+
+# Build the Ultimate Unbreakable Brain (Groq -> OpenRouter -> Gemini)
+llm = llm_groq.with_fallbacks([llm_openrouter, llm_gemini])
+llm_json = llm_groq_json.with_fallbacks([llm_openrouter, llm_gemini])
+
+# Helper function to extract text safely (handles both str and list responses)
+def extract_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        return "".join([str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content])
+    return str(content)
 
 # Helper function to clean JSON from any model output
-def clean_json(text: str) -> str:
+def clean_json(content: Any) -> str:
+    text = extract_text(content)
     return text.replace("```json", "").replace("```", "").strip()
+
+
 
 def router_node(state: ClassroomState) -> Dict[str, Any]:
     """Decides if the AI should intervene based on student messages."""
@@ -177,7 +190,8 @@ def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     """)
     
     try:
-        keyword = llm.invoke(keyword_prompt.format(strategy=strategy)).content.strip().strip('"')
+        raw_text = extract_text(llm.invoke(keyword_prompt.format(strategy=strategy)).content)
+        keyword = raw_text.strip().strip('"')
         results = DDGS().images(keyword, max_results=1)
         image_url = results[0].get("image", "") if results else ""
     except Exception as e:
@@ -228,7 +242,7 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
             image_url=state.get("image_url", "")
         )
         response = llm.invoke(formatted_prompt)
-        return {"final_response": response.content.strip()}
+        return {"final_response": extract_text(response.content).strip()}
     except Exception as e:
         logging.error(f"Persona Error: {e}")
         return {"final_response": "I'm having a little trouble thinking right now. Could you repeat that?"}
