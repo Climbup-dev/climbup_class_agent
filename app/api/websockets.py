@@ -143,12 +143,12 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
     
     await manager.connect(websocket, classroom_id, student_id, student_name)
     
-    await manager.broadcast({
-        "type": "system",
-        "content": f"{student_name} joined the classroom."
-    }, classroom_id)
-    
     try:
+        # Welcome message to the user directly
+        await websocket.send_json({
+            "type": "system",
+            "content": f"Welcome to your personal study room, {student_name}!"
+        })
         if classroom_id not in manager.classroom_history:
             manager.classroom_history[classroom_id] = []
 
@@ -176,12 +176,12 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     }).eq('student_id', student_id).execute()
             except Exception as e:
                 pass
-            
-            await manager.broadcast({
-                "type": "chat",
-                "sender": student_name,
-                "content": data
-            }, classroom_id, exclude=websocket)
+            # Echo the user's message back to themselves (optional, usually handled by frontend, but we'll send a confirmation if needed. For now, we skip echoing to avoid duplicates on the frontend if frontend already shows it).
+            # await websocket.send_json({
+            #     "type": "chat",
+            #     "sender": student_name,
+            #     "content": data
+            # })
             
             try:
                 vector_store = classroom_brains.get(classroom_id)
@@ -258,16 +258,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     is_disruptive = result.get("is_disruptive", False)
                     is_abusive = result.get("is_abusive", False)
                     
-                    if is_disruptive or is_abusive:
-                        manager.strikes[classroom_id][student_id] = current_strikes + 1
-                        
-                        # If strike count reaches 3, kick them.
-                        if manager.strikes[classroom_id][student_id] >= 3:
-                            kick_msg = f"[SYSTEM] 🚨 {student_name} was kicked from the classroom for continuous disruption/abuse."
-                            await manager.broadcast({"type": "system", "content": kick_msg}, classroom_id)
-                            # Close the websocket for this specific student
-                            await websocket.close(code=1008, reason="Kicked by AI Moderator")
-                            continue
+                    # No kicking for personal sessions, let the Persona scold them!
                             
                     # Gamification: Check if XP was awarded
                     awarded_xp = result.get("awarded_xp", 0)
@@ -281,13 +272,13 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                             # Update in DB
                             supabase_new.table('student_profiles').update({"xp_points": new_xp}).eq('student_id', student_id).execute()
                             
-                            # Broadcast award event
-                            await manager.broadcast({
+                            # Send award event directly to the user
+                            await websocket.send_json({
                                 "type": "award",
                                 "student": student_name,
                                 "points": awarded_xp,
-                                "content": f"🎉 {student_name} earned {awarded_xp} XP for a brilliant answer!"
-                            }, classroom_id)
+                                "content": f"🎉 You earned {awarded_xp} XP for a brilliant answer!"
+                            })
                         except Exception as xp_err:
                             print("Error updating XP:", xp_err)
                             
@@ -319,16 +310,12 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 chat_content = f"I'm sorry, my AI brain encountered an error: {str(e)}"
                 board_content = ""
 
-            await manager.broadcast({
+            await websocket.send_json({
                 "type": "teaching",
                 "sender": "AI Teacher",
                 "chat_content": chat_content,
                 "board_content": board_content
-            }, classroom_id)
+            })
             
     except WebSocketDisconnect:
         manager.disconnect(websocket, classroom_id)
-        await manager.broadcast({
-            "type": "system",
-            "content": f"{student_name} left the classroom."
-        }, classroom_id)

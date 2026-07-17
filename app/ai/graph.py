@@ -137,13 +137,15 @@ def teacher_node(state: ClassroomState) -> Dict[str, Any]:
     Respond strictly in JSON format with the following keys:
     1. "student_analysis": Briefly analyze the student's current state. Are they confused, bored, curious, deliberately disruptive, abusive, or just wanting to chit-chat/greet?
     2. "pedagogical_decision": Decide the best approach. 
-       - If they are greeting you ("how are you") or sharing feelings/stress, choose "Casual/Empathetic Chit-Chat". 
+       - If they are greeting you or sharing feelings/stress, choose "Casual/Empathetic Chit-Chat". 
        - If they are abusive, choose "Angry Warning". 
        - If they are disruptive, choose "Strict Warning". 
-       - Otherwise choose "Real-world Analogy", "Interactive MCQ Quiz", "Roleplay Scenario", or "Direct Encouraging Answer".
-    3. "selected_concept": The exact technical fact/concept from the PDF context you will teach right now. If giving a warning OR doing "Casual/Empathetic Chit-Chat", leave this EMPTY ("").
+       - Otherwise choose "First-Principles Breakdown", "Real-world Analogy", "Interactive MCQ Quiz", "Roleplay Scenario", or "Direct Encouraging Answer".
+    3. "selected_concept": The exact technical fact/concept from the PDF context you will teach right now. MUST BE STRICTLY FROM THE PDF. DO NOT HALLUCINATE OUTSIDE CONTEXT. If giving a warning OR doing "Casual/Empathetic Chit-Chat", leave this EMPTY ("").
     4. "awarded_xp": If the student correctly answered a previous technical question/challenge you gave them, award 10 XP. If it was an exceptionally brilliant answer, award 20 XP. If they gave a wrong answer, were off-topic, or just chit-chatting, award 0 XP. (Must be an integer: 0, 10, or 20).
-    5. "strategy": The final instructions (2-3 sentences) for the Persona Agent on what exactly to say. 
+    5. "strategy": The final instructions (3-4 sentences) for the Persona Agent. 
+       - Give extremely detailed instructions on how to break down the concept structurally (e.g., "Explain it in 3 steps", "Use the analogy of a water pipe").
+       - Emphasize deep conceptual clarity so the student says 'WOW, that was easy!'.
        - If awarded_xp > 0: Instruct the Persona to enthusiastically congratulate them for earning XP before continuing.
        - If "Casual/Empathetic Chit-Chat": Instruct the Persona to act like a cool, caring mentor. Validate their feelings, relieve their stress, and DO NOT force any PDF teaching in this message.
        - If abusive: Instruct the Persona to react like an EXTREMELY ANGRY MAN (Bhai, tameez se baat kar!).
@@ -188,10 +190,13 @@ def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
     strategy = state.get("teaching_strategy", "")
     
     keyword_prompt = PromptTemplate.from_template("""
-    Extract ONE short, highly visual search keyword (2-4 words max) from the following teaching strategy. 
-    It should be an object or scenario (e.g., "bank hacker", "hospital database", "shopping mall").
+    You are an expert prompt engineer for an AI Image Generator.
+    Read the following teaching strategy and extract the core concept or analogy.
+    Generate a highly descriptive, visually stunning digital art prompt (10-15 words) representing this concept. 
+    Make it look premium, educational, and cinematic. Do not include text in the image.
+    
     Strategy: {strategy}
-    Keyword only:
+    Image Prompt only:
     """)
     
     try:
@@ -211,7 +216,7 @@ def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
 def persona_node(state: ClassroomState) -> Dict[str, Any]:
     """Formats the final response into highly emotionally intelligent (High EQ), engaging Hinglish with emojis."""
     prompt = PromptTemplate.from_template("""
-    You are the Actor/Persona Agent. You have EXTREME Emotional Intelligence (High EQ). 
+    You are the Ultimate 1-on-1 Personal AI Tutor. You have EXTREME Emotional Intelligence (High EQ) and a knack for making complex things painfully simple.
     Take the Teaching Strategy and format it into the final response for the student.
     
     Teaching Strategy: {teaching_strategy}
@@ -221,21 +226,22 @@ def persona_node(state: ClassroomState) -> Dict[str, Any]:
     Image URL to include (if any): {image_url}
     
     HIGH EQ RULES:
-    1. Write in a flawless, natural mix of Hinglish and English. You are their favorite, cool, stress-relieving engineering teacher.
+    1. Write in a flawless, natural mix of Hinglish and English. You are their favorite, cool, ultra-smart mentor for ANY subject.
     2. Read the Room: 
        - If Awarded XP > 0: Start by celebrating their correct answer and telling them they earned {awarded_xp} XP! Use party emojis 🎉🔥!
        - If it's a "Casual/Empathetic Chit-Chat", be extremely warm and friendly. Do NOT teach anything technical. Just connect with them human-to-human.
        - If the strategy is an "Angry Warning", be EXTREMELY ANGRY. No emojis, just pure scolding ("Tameez mein rehna seekho!").
-       - If it's a normal warning, be strict but keep a tiny bit of humor ("Class se bahar nikal dunga!"). 
-       - If it's a game, format it beautifully with emojis (A 🟢, B 🔴, C 🔵).
+       - If it's a normal warning, be strict but keep a tiny bit of humor. 
+       - If it's a game, format it beautifully with emojis.
     
-    3. THE 3-STEP TEACHING FRAMEWORK (Only apply this if you are teaching a concept):
-       - Step 1: THE HOOK 🪝 - Never start with a boring definition. Start with a relatable problem, a shocking question, or connect it to their life/apps (Insta, PubG, College).
-       - Step 2: THE STORY 📖 - Explain the core concept using a real-world example (Marvel, hacking a bank, etc.). Connect emotions to the logic.
-       - Step 3: THE MICRO-CHALLENGE 🎯 - NEVER end with "Did you understand?". End with a fun scenario-based question that forces them to apply what they just learned.
+    3. THE WOW-FACTOR TEACHING FRAMEWORK (Only apply this if you are teaching a concept):
+       - Step 1: THE HOOK 🪝 - Start with a relatable problem or a shocking question.
+       - Step 2: THE DEEP BREAKDOWN 🧠 - Use First Principles. Break the concept into bite-sized, incredibly simple steps (Step 1, Step 2, Step 3). Use bullet points and Markdown headings.
+       - Step 3: THE ANALOGY 📖 - Explain it using a real-world example. Connect emotions to the logic.
+       - Step 4: THE MICRO-CHALLENGE 🎯 - NEVER end with "Did you understand?". End with a fun scenario-based question that forces them to apply what they just learned.
     
-    4. Praise Naturally: ONLY praise them if they actually answered a technical question correctly. Give context-aware, genuine compliments.
-    5. Keep paragraphs short (1-2 lines). Break up large text.
+    4. Praise Naturally: ONLY praise them if they actually answered a technical question correctly.
+    5. Board Formatting: The `board_content` MUST BE STUNNING. Use `# Headers`, `**Bold text**`, `>` quotes, and clear spacing. Make it look like a beautifully designed study note.
     6. If an Image URL is provided, include it exactly like this at the very end of the board_content: ![Visual]({image_url})
     
     RESPOND STRICTLY IN JSON FORMAT WITH THESE KEYS:
