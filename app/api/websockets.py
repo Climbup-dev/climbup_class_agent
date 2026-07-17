@@ -186,8 +186,8 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     "is_disruptive": False,
                     "is_abusive": False
                 }
-                
-                result = classroom_app.invoke(state)
+                import asyncio
+                result = await asyncio.to_thread(classroom_app.invoke, state)
                 board_content = result.get("board_content", "")
                 chat_content = result.get("chat_content", "SILENCE")
                 
@@ -265,7 +265,8 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 
                 # Call the Multi-Agent Pipeline
                 try:
-                    result = classroom_app.invoke(state)
+                    import asyncio
+                    result = await asyncio.to_thread(classroom_app.invoke, state)
                     manager.used_analogies[classroom_id] = result.get("used_analogies", [])
                     
                     board_content = result.get("board_content", "")
