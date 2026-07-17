@@ -32,7 +32,9 @@ class ClassroomState(TypedDict):
     awarded_xp: int
     
     should_intervene: bool
-    teaching_strategy: str
+    # Final Output
+    board_content: str
+    chat_content: str
 import os
 
 import os
