@@ -503,19 +503,10 @@ async def upload_smart_material(
         print(f"Failed to update db: {e}")
         
     try:
-        try:
-            # First check if it exists
-            existing = supabase_new.table('subjects').select('subject_id').eq('subject_id', subject_id).execute()
-            if not existing.data:
-                supabase_new.table('subjects').insert({
-                    "subject_id": subject_id, 
-                    "subject_name": f"Subject {subject_id}",
-                    "university_id": university_id,
-                    "branch_id": branch_id,
-                    "semester": str(semester_id)
-                }).execute()
-        except Exception as e:
-            print(f"Subject check/insert failed: {e}")
+        supabase_new.table('subjects').upsert({
+            "id": subject_id, 
+            "subject_name": f"Subject {subject_id}"
+        }).execute()
         
         # Upload to Supabase Storage
         bucket_name = "class_materials"
