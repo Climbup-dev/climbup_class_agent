@@ -98,8 +98,8 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
             }}
             """)
             
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7).bind(response_format={"type": "json_object"})
+            from app.core.llm_balancer import get_balanced_fast_llm
+            llm_gemini = get_balanced_fast_llm()
             
             tour_response = llm_gemini.invoke(tour_prompt.format(full_text=full_text))
             
