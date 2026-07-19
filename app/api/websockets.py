@@ -48,7 +48,7 @@ class ConnectionManager:
         # 1. Fetch Session and Subject Info from Supabase (if not cached)
         if classroom_id not in self.classroom_contexts:
             try:
-                res = supabase_new.table('classrooms').select('topic_name, subject_id, lecture_date').eq('id', classroom_id).execute()
+                res = supabase_new.table('classrooms').select('topic_name, subject_id, created_at').eq('id', classroom_id).execute()
                 if res.data:
                     c_data = res.data[0]
                     sub_res = supabase_new.table('subjects').select('subject_name').eq('id', c_data['subject_id']).execute()
@@ -56,7 +56,7 @@ class ConnectionManager:
                     self.classroom_contexts[classroom_id] = {
                         "subject_name": subject_name,
                         "topic_name": c_data['topic_name'],
-                        "lecture_date": c_data.get('lecture_date', 'Today')
+                        "lecture_date": c_data.get('created_at', 'Today')
                     }
                 else:
                     self.classroom_contexts[classroom_id] = {"subject_name": "General Topic", "topic_name": "General Lecture", "lecture_date": "Today"}
@@ -79,7 +79,7 @@ class ConnectionManager:
                 self.student_profiles[student_id] = prof_res.data[0]
             
             # Record entry in session_students if not exists
-            supabase_new.table('session_students').upsert({
+            supabase_new.table('classroom_students').upsert({
                 "session_id": classroom_id,
                 "student_id": student_id
             }).execute()
@@ -251,7 +251,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     "classroom_id": classroom_id,
                     "subject_name": ctx["subject_name"],
                     "topic_name": ctx["topic_name"],
-                    "lecture_date": ctx.get("lecture_date", "Today"),
+                    "lecture_date": ctx.get("created_at", "Today"),
                     "active_students": active_students,
                     "student_name": student_name,
                     "student_profile": f"Engagement Level: {prof.get('engagement_level', 'Unknown')}, Total Messages: {prof.get('total_messages_sent', 0)}",
