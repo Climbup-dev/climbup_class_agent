@@ -96,7 +96,7 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
         
-        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
+        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEYS", "dummy").split(",")[0].replace('"', "").replace("'", "").strip()), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
         vector_store = FAISS.from_documents(chunks, embeddings)
         
         bm25_retriever = BM25Retriever.from_documents(chunks)
@@ -245,7 +245,7 @@ def process_upload_in_background(
             
             logging.info("Starting Multi-Modal Image Extraction...")
             pdf_document = fitz.open(file_path)
-            
+            image_tasks = []
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
                 image_list = page.get_images(full=True)
@@ -397,7 +397,7 @@ def process_upload_in_background(
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
         
-        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
+        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEYS", "dummy").split(",")[0].replace('"', "").replace("'", "").strip()), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
         vector_store = FAISS.from_documents(chunks, embeddings)
         
         bm25_retriever = BM25Retriever.from_documents(chunks)
