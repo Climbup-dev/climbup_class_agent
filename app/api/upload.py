@@ -271,13 +271,29 @@ def process_upload_in_background(
                         
                         if public_img_url:
                             base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                            import time
+                            time.sleep(3) # Throttle to avoid rate limits
                             llm_vision = get_balanced_vision_llm()
-                            response = llm_vision.invoke([
-                                HumanMessage(content=[
-                                    {"type": "text", "text": "Describe this educational diagram, chart, or image in detail. If it is just a full page of scanned text, reply with exactly 'IGNORE'."},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/{image_ext};base64,{base64_image}"}}
-                                ])
-                            ])
+                            
+                            response = None
+                            for attempt in range(3):
+                                try:
+                                    response = llm_vision.invoke([
+                                        HumanMessage(content=[
+                                            {"type": "text", "text": "Describe this educational diagram, chart, or image in detail. If it is just a full page of scanned text, reply with exactly 'IGNORE'."},
+                                            {"type": "image_url", "image_url": {"url": f"data:image/{image_ext};base64,{base64_image}"}}
+                                        ])
+                                    ])
+                                    break
+                                except Exception as e:
+                                    if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
+                                        time.sleep(15 * (attempt + 1))
+                                    else:
+                                        raise e
+                                        
+                            if response is None:
+                                return None
+                                
                             if isinstance(response.content, list):
                                 desc = " ".join([c.get("text", "") for c in response.content if isinstance(c, dict) and "text" in c]).strip()
                             else:
@@ -290,7 +306,7 @@ def process_upload_in_background(
                         logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
                     return None
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     futures = [executor.submit(process_single_image, t[0], t[1], t[2]) for t in image_tasks]
                     for future in concurrent.futures.as_completed(futures):
                         res = future.result()
