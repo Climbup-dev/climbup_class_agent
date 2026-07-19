@@ -245,7 +245,56 @@ def process_upload_in_background(
             
             logging.info("Starting Multi-Modal Image Extraction...")
             pdf_document = fitz.open(file_path)
-            image_tasks = []
+            
+            def process_single_image(page_num, img_index, base_image):
+                img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
+                try:
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    if image_ext.lower() not in ["png", "jpeg", "jpg"]:
+                        return None
+                        
+                    public_img_url = upload_image_to_supabase(image_bytes, img_filename)
+                    
+                    if public_img_url:
+                        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                        
+                        import time
+                        time.sleep(1) # Slight throttle for API stability
+                        
+                        llm_vision = get_balanced_vision_llm()
+                        response = None
+                        
+                        for attempt in range(3):
+                            try:
+                                response = llm_vision.invoke([
+                                    HumanMessage(content=[
+                                        {"type": "text", "text": "Describe this educational diagram, chart, or image in detail. If it is just a full page of scanned text, reply with exactly 'IGNORE'."},
+                                        {"type": "image_url", "image_url": {"url": f"data:image/{image_ext};base64,{base64_image}"}}
+                                    ])
+                                ])
+                                break
+                            except Exception as e:
+                                if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
+                                    time.sleep(5 * (attempt + 1))
+                                else:
+                                    raise e
+                                    
+                        if response is None:
+                            return None
+                            
+                        if isinstance(response.content, list):
+                            desc = " ".join([c.get("text", "") for c in response.content if isinstance(c, dict) and "text" in c]).strip()
+                        else:
+                            desc = str(response.content).strip()
+                        
+                        if desc != "IGNORE" and "IGNORE" not in desc:
+                            logging.info(f"Processed image {img_filename}")
+                            return f"\n\n--- DIAGRAM ON PAGE {page_num + 1} ---\nIMAGE DESCRIPTION: {desc}\n![Diagram]({public_img_url})\n---\n\n"
+                except Exception as img_upload_err:
+                    logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+                return None
+
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
                 image_list = page.get_images(full=True)
@@ -253,66 +302,19 @@ def process_upload_in_background(
                 for img_index, img in enumerate(image_list):
                     xref = img[0]
                     base_image = pdf_document.extract_image(xref)
-                    image_tasks.append((page_num, img_index, base_image))
                     
-            if image_tasks:
-                logging.info(f"Found {len(image_tasks)} images. Processing in parallel...")
-                import concurrent.futures
-                
-                def process_single_image(page_num, img_index, base_image):
-                    img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
-                    try:
-                        image_bytes = base_image["image"]
-                        image_ext = base_image["ext"]
-                        if image_ext.lower() not in ["png", "jpeg", "jpg"]:
-                            return None
-                            
-                        public_img_url = upload_image_to_supabase(image_bytes, img_filename)
-                        
-                        if public_img_url:
-                            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                            import time
-                            time.sleep(3) # Throttle to avoid rate limits
-                            llm_vision = get_balanced_vision_llm()
-                            
-                            response = None
-                            for attempt in range(3):
-                                try:
-                                    response = llm_vision.invoke([
-                                        HumanMessage(content=[
-                                            {"type": "text", "text": "Describe this educational diagram, chart, or image in detail. If it is just a full page of scanned text, reply with exactly 'IGNORE'."},
-                                            {"type": "image_url", "image_url": {"url": f"data:image/{image_ext};base64,{base64_image}"}}
-                                        ])
-                                    ])
-                                    break
-                                except Exception as e:
-                                    if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
-                                        time.sleep(15 * (attempt + 1))
-                                    else:
-                                        raise e
-                                        
-                            if response is None:
-                                return None
-                                
-                            if isinstance(response.content, list):
-                                desc = " ".join([c.get("text", "") for c in response.content if isinstance(c, dict) and "text" in c]).strip()
-                            else:
-                                desc = str(response.content).strip()
-                            
-                            if desc != "IGNORE" and "IGNORE" not in desc:
-                                logging.info(f"Processed image {img_filename}")
-                                return f"\n\n--- DIAGRAM ON PAGE {page_num + 1} ---\nIMAGE DESCRIPTION: {desc}\n![Diagram]({public_img_url})\n---\n\n"
-                    except Exception as img_upload_err:
-                        logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
-                    return None
+                    # Process immediately instead of buffering to save memory (Fixes Render OOM)
+                    res = process_single_image(page_num, img_index, base_image)
+                    if res:
+                        all_extracted_images.append(res)
+                    
+                    # Free up memory immediately
+                    del base_image
+                    import gc
+                    gc.collect()
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    futures = [executor.submit(process_single_image, t[0], t[1], t[2]) for t in image_tasks]
-                    for future in concurrent.futures.as_completed(futures):
-                        res = future.result()
-                        if res:
-                            all_extracted_images.append(res)
-                            
+            pdf_document.close()
+            
         except Exception as e:
             logging.error(f"Image extraction failed: {e}")
         # ----------------------------------------------------------------
