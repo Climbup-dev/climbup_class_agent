@@ -22,3 +22,6 @@ pytz
 langgraph
 duckduckgo-search
 langchain-google-genai
+
+flashrank
+rank_bm25
