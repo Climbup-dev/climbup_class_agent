@@ -87,8 +87,7 @@ class ConnectionManager:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
         self.llm = get_balanced_llm(temperature=0.7)
-        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get('OPENROUTER_API_KEY', os.environ.get('OPENROUTER_API_KEYS', 'dummy').split(',')[0].strip('"' ')), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
-
+        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get('OPENROUTER_API_KEY', os.environ.get('OPENROUTER_API_KEYS', 'dummy').split(',')[0].replace('"', '').replace("'", "").strip()), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
     def disconnect(self, websocket: WebSocket, classroom_id: str):
         if classroom_id in self.active_connections:
             self.active_connections[classroom_id].remove(websocket)
