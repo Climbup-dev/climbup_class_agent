@@ -166,8 +166,22 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     shutil.unpack_archive(zip_name, faiss_dir)
                     
                     from langchain_community.vectorstores import FAISS
-                    vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
-                    classroom_brains[classroom_id] = vector_store
+                    from langchain.retrievers import EnsembleRetriever
+                    import pickle
+                    
+                    faiss_vs = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
+                    faiss_retriever = faiss_vs.as_retriever(search_kwargs={"k": 10})
+                    
+                    bm25_path = os.path.join(faiss_dir, "bm25.pkl")
+                    if os.path.exists(bm25_path):
+                        with open(bm25_path, "rb") as f:
+                            bm25_retriever = pickle.load(f)
+                        bm25_retriever.k = 10
+                        retriever = EnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.4, 0.6])
+                    else:
+                        retriever = faiss_retriever
+                        
+                    classroom_brains[classroom_id] = retriever
                     
                     os.remove(zip_name)
                     shutil.rmtree(faiss_dir)
@@ -175,9 +189,10 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     print("Could not lazy load FAISS:", faiss_err)
                     vector_store = None
             
-            if vector_store:
+            retriever = classroom_brains.get(classroom_id)
+            if retriever:
                 # Trigger initial overview
-                docs = vector_store.similarity_search("syllabus overview important topics concepts", k=4)
+                docs = retriever.invoke("syllabus overview important topics concepts")[:4]
                 context = "\n".join([doc.page_content for doc in docs])
                 
                 ctx = manager.classroom_contexts.get(classroom_id, {"subject_name": "General Topic", "topic_name": "General Lecture"})
@@ -241,10 +256,9 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             # })
             
             try:
-                vector_store = classroom_brains.get(classroom_id)
-                # FAISS is loaded at connection time. Just get it.
+                retriever = classroom_brains.get(classroom_id)
 
-                if vector_store:
+                if retriever:
                     history = manager.classroom_history.get(classroom_id, [])[-15:-1]
                     chat_history_str = "\n".join([f"{msg.get('sender')}: {msg.get('text')}" for msg in history])
                     
@@ -252,8 +266,8 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     standalone_query = reformulate_query(data, chat_history_str)
                     print(f"WS Original Query: {data} | Reformulated: {standalone_query}")
                     
-                    # 2. Fetch wider pool
-                    docs = vector_store.similarity_search(standalone_query, k=10)
+                    # 2. Fetch wider pool via Hybrid Search (BM25 + FAISS)
+                    docs = retriever.invoke(standalone_query)
                     
                     # 3. Rerank
                     best_docs = rerank_documents(standalone_query, docs, top_k=4)

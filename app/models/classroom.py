@@ -20,12 +20,9 @@ class Classroom(Base):
     __tablename__ = "classrooms"
 
     id = Column(Integer, primary_key=True, index=True)
-    teacher_id = Column(Integer, ForeignKey("users.id"))
     topic = Column(String)
     status = Column(Enum(ClassroomStatus), default=ClassroomStatus.PENDING)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    teacher = relationship("User", foreign_keys=[teacher_id])
     students = relationship("User", secondary=classroom_students)
     materials = relationship("Material", back_populates="classroom")
     messages = relationship("Message", back_populates="classroom")

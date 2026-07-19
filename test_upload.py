@@ -1,33 +1,50 @@
+import requests
+import json
 import os
-from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-import os
-from langchain_community.vectorstores import FAISS
-from app.core.ssl_fix import apply_ssl_fix
-from dotenv import load_dotenv
 
-apply_ssl_fix()
-load_dotenv()
+url = "http://127.0.0.1:8000/api/v1/upload-smart"
+file_path = "c:/Users/shaik/Desktop/mini project report.pdf"
 
+if not os.path.exists(file_path):
+    print("File not found")
+    exit(1)
+
+print(f"Uploading {file_path} to {url}...")
 try:
-    file_path = "uploads/123_Cyber Jurisdiction .pdf"
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        data = {
+            "university_id": "dummy_uni",
+            "branch_id": "dummy_branch",
+            "semester_id": "dummy_sem",
+            "subject_id": "a68ca16c-d66c-4f79-b594-e8698b5cae0e",
+            "topic_title": "Test Topic"
+        }
+        res = requests.post(url, files=files, data=data)
+        
+    print(f"Status Code: {res.status_code}")
+    print(f"Response: {res.text}")
     
-    print("Loading PDF...")
-    loader = PyMuPDFLoader(file_path)
-    documents = loader.load()
-    print(f"Loaded {len(documents)} documents.")
-    
-    print("Splitting...")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = text_splitter.split_documents(documents)
-    print(f"Created {len(chunks)} chunks.")
-    
-    print("Embedding and storing in FAISS...")
-    embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
-    vector_store = FAISS.from_documents(chunks, embeddings)
-    
-    print("Success!")
+    if res.status_code == 200:
+        resp_data = res.json()
+        classroom_id = resp_data.get("classroom_id")
+        print(f"Classroom ID: {classroom_id}")
+        
+        if classroom_id:
+            json_path = f"c:/Users/shaik/Desktop/class agent/backend/uploads/{classroom_id}_tour.json"
+            if os.path.exists(json_path):
+                with open(json_path, "r", encoding="utf-8") as jf:
+                    tour_data = json.load(jf)
+                    print(f"Total Lessons: {len(tour_data.get('lessons', []))}")
+                    found_diagram = False
+                    for i, lesson in enumerate(tour_data.get("lessons", [])):
+                        if "![Diagram]" in lesson.get("exact_quote", ""):
+                            print(f"Lesson {i+1} has a Diagram!")
+                            found_diagram = True
+                    if not found_diagram:
+                        print("NO DIAGRAMS FOUND IN JSON.")
+            else:
+                print(f"JSON not found at {json_path}")
+                
 except Exception as e:
-    import traceback
-    traceback.print_exc()
+    print(f"Error: {e}")

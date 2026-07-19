@@ -502,12 +502,10 @@ async def upload_smart_material(
     except Exception as e:
         print(f"Failed to update db: {e}")
         
-    dummy_teacher_id = str(uuid.uuid4())
     try:
         supabase_new.table('subjects').upsert({
             "id": subject_id, 
-            "subject_name": f"Subject {subject_id}",
-            "teacher_id": dummy_teacher_id
+            "subject_name": f"Subject {subject_id}"
         }).execute()
         
         # Upload to Supabase Storage
@@ -526,7 +524,6 @@ async def upload_smart_material(
         session_data = {
             "id": classroom_id,
             "subject_id": subject_id,
-            "teacher_id": dummy_teacher_id,
             "topic_name": topic_title,
             "pdf_url": pdf_url
         }
