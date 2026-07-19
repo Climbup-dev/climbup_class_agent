@@ -166,16 +166,32 @@ def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
     return llms[0].with_fallbacks(llms[1:])
 
 def get_balanced_vision_llm():
-    # Vision requires Gemini currently
     gemini_keys = get_api_keys("GEMINI_API_KEYS")
-    if not gemini_keys:
-        logging.warning("No GEMINI_API_KEYS found for Vision processing.")
-        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", api_key="dummy")
-        
+    openrouter_keys = get_api_keys("OPENROUTER_API_KEYS")
+    
     llms = []
-    random.shuffle(gemini_keys)
-    for key in gemini_keys:
-        llms.append(ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3, api_key=key, max_retries=1))
+    if gemini_keys:
+        random.shuffle(gemini_keys)
+        for key in gemini_keys:
+            # Using Gemini 2.0 Flash as 1.5 is deprecated
+            llms.append(ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3, api_key=key, max_retries=1))
+            
+    if openrouter_keys:
+        random.shuffle(openrouter_keys)
+        for key in openrouter_keys:
+            # Fallback to OpenRouter's free Gemini 2.0 Flash
+            llms.append(ChatOpenAI(
+                model="google/gemini-2.0-flash-lite-preview-02-05:free", 
+                openai_api_key=key, 
+                openai_api_base="https://openrouter.ai/api/v1",
+                temperature=0.3,
+                max_retries=1
+            ))
+            
+    if not llms:
+        logging.warning("No GEMINI or OPENROUTER keys found for Vision processing.")
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key="dummy")
+        
     return llms[0].with_fallbacks(llms[1:]) if len(llms) > 1 else llms[0]
 
 def get_balanced_text_llm(model_name="N/A", temperature=0.7):
