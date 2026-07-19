@@ -1,3 +1,4 @@
+from app.core.llm_balancer import get_balanced_llm
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
 import os
@@ -72,8 +73,8 @@ class PersonalConnectionManager:
             pass 
 
         # Lower temperature for systematic, accurate answers
-        self.llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2) 
-        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
+        self.llm = get_balanced_llm(temperature=0.2) 
+        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get('OPENROUTER_API_KEY', os.environ.get('OPENROUTER_API_KEYS', 'dummy').split(',')[0].strip('"' ')), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, student_id: str):
         if student_id in self.active_connections:

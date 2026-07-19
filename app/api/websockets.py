@@ -1,3 +1,4 @@
+from app.core.llm_balancer import get_balanced_llm
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
 import os
@@ -85,16 +86,8 @@ class ConnectionManager:
         except Exception as e:
             pass # Ignore errors for MVP if DB isn't perfectly set up yet
 
-        llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-        llm_openrouter = ChatOpenAI(
-            model="meta-llama/llama-3-8b-instruct:free", 
-            openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
-            openai_api_base="https://openrouter.ai/api/v1",
-            temperature=0.7
-        )
-        llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
-        self.llm = llm_groq.with_fallbacks([llm_openrouter, llm_gemini])
-        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY"), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
+        self.llm = get_balanced_llm(temperature=0.7)
+        self.embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get('OPENROUTER_API_KEY', os.environ.get('OPENROUTER_API_KEYS', 'dummy').split(',')[0].strip('"' ')), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
 
     def disconnect(self, websocket: WebSocket, classroom_id: str):
         if classroom_id in self.active_connections:
