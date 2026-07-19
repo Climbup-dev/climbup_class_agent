@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import os
 import json
+from app.core.supabase_client import supabase_new
 
 router = APIRouter()
 
@@ -11,6 +12,17 @@ async def get_classroom_tour(classroom_id: str):
     """
     tour_path = f"uploads/{classroom_id}_tour.json"
     
+    if not os.path.exists(tour_path):
+        # Try to download from Supabase if not found locally (Render Ephemeral Fix)
+        try:
+            res = supabase_new.storage.from_("class_tours").download(f"{classroom_id}_tour.json")
+            if res:
+                os.makedirs("uploads", exist_ok=True)
+                with open(tour_path, "wb") as f:
+                    f.write(res)
+        except Exception:
+            pass # Download failed, it really doesn't exist
+            
     if not os.path.exists(tour_path):
         # Fallback if the tour isn't generated yet or failed
         return {

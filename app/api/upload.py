@@ -25,11 +25,53 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
     if not file.filename.lower().endswith(allowed_exts):
         raise HTTPException(status_code=400, detail="Only PDF, PPT, and Images are supported.")
         
+    try:
+        supabase_new.storage.create_bucket("class_materials", options={"public": True})
+    except Exception:
+        pass
+    try:
+        supabase_new.storage.create_bucket("class_tours", options={"public": True})
+    except Exception:
+        pass
+
+    try:
+        supabase_new.storage.create_bucket("class_materials", options={"public": True})
+    except Exception:
+        pass
+    try:
+        supabase_new.storage.create_bucket("class_tours", options={"public": True})
+    except Exception:
+        pass
+
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{classroom_id}_{file.filename}"
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        with open(file_path, "rb") as f:
+            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
+    except Exception:
+        pass # Already exists or error
+        
+    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
+    try:
+        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
+    except Exception as e:
+        print(f"Failed to update db: {e}")
+        
+    try:
+        with open(file_path, "rb") as f:
+            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
+    except Exception:
+        pass # Already exists or error
+        
+    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
+    try:
+        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
+    except Exception as e:
+        print(f"Failed to update db: {e}")
         
     try:
         from llama_parse import LlamaParse
@@ -130,6 +172,12 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
             tour_json_path = f"uploads/{classroom_id}_tour.json"
             with open(tour_json_path, "w", encoding="utf-8") as tour_file:
                 tour_file.write(content)
+                
+            try:
+                with open(tour_json_path, "rb") as f:
+                    supabase_new.storage.from_("class_tours").upload(f"{classroom_id}_tour.json", f.read(), {"content-type": "application/json"})
+            except Exception:
+                pass
                 
             import logging
             logging.info(f"✅ Guided Tour generated and saved: {tour_json_path}")
@@ -325,6 +373,12 @@ def process_upload_in_background(
             tour_json_path = f"uploads/{classroom_id}_tour.json"
             with open(tour_json_path, "w", encoding="utf-8") as f:
                 f.write(content)
+                
+            try:
+                with open(tour_json_path, "rb") as f:
+                    supabase_new.storage.from_("class_tours").upload(f"{classroom_id}_tour.json", f.read(), {"content-type": "application/json"})
+            except Exception:
+                pass
         except Exception as e:
             print(f"Warning: Failed to generate course tour: {e}")
         # ---------------------------------
@@ -400,11 +454,53 @@ async def upload_smart_material(
         
     classroom_id = str(uuid.uuid4())
     
+    try:
+        supabase_new.storage.create_bucket("class_materials", options={"public": True})
+    except Exception:
+        pass
+    try:
+        supabase_new.storage.create_bucket("class_tours", options={"public": True})
+    except Exception:
+        pass
+
+    try:
+        supabase_new.storage.create_bucket("class_materials", options={"public": True})
+    except Exception:
+        pass
+    try:
+        supabase_new.storage.create_bucket("class_tours", options={"public": True})
+    except Exception:
+        pass
+
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{classroom_id}_{file.filename}"
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        with open(file_path, "rb") as f:
+            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
+    except Exception:
+        pass # Already exists or error
+        
+    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
+    try:
+        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
+    except Exception as e:
+        print(f"Failed to update db: {e}")
+        
+    try:
+        with open(file_path, "rb") as f:
+            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
+    except Exception:
+        pass # Already exists or error
+        
+    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
+    try:
+        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
+    except Exception as e:
+        print(f"Failed to update db: {e}")
         
     dummy_teacher_id = str(uuid.uuid4())
     try:
