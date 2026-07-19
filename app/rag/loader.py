@@ -1,7 +1,7 @@
 import os
 import fitz  # PyMuPDF
 from pptx import Presentation
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 def parse_pdf(file_path: str, base_metadata: dict) -> list[Document]:
     documents = []

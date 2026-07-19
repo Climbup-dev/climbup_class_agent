@@ -164,11 +164,11 @@ async def personal_websocket_endpoint(websocket: WebSocket, classroom_id: str, s
             }, student_id)
             
             try:
-                vector_store = classroom_brains.get(classroom_id)
-                if vector_store:
+                retriever = classroom_brains.get(classroom_id)
+                if retriever:
                     # K=5 for deeper search in personal mode
-                    docs = vector_store.similarity_search(data, k=5)
-                    context = "\n".join([doc.page_content for doc in docs])
+                    docs = retriever.invoke(data)
+                    context = "\n\n---\n\n".join([doc.page_content for doc in docs])
                 else:
                     context = "No specific lecture material found. Rely on your general expert knowledge."
                 

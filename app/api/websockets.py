@@ -17,6 +17,7 @@ from app.core.supabase_client import supabase_new
 from dotenv import load_dotenv
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.ai.graph import classroom_app
+from app.rag.embedder import reformulate_query, rerank_documents
 load_dotenv()
 
 router = APIRouter()
@@ -98,6 +99,10 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket, classroom_id: str):
         if classroom_id in self.active_connections:
             self.active_connections[classroom_id].remove(websocket)
+            # Clear chat history when the classroom is empty
+            if len(self.active_connections[classroom_id]) == 0:
+                if classroom_id in self.classroom_history:
+                    del self.classroom_history[classroom_id]
         if websocket in self.connection_names:
             del self.connection_names[websocket]
             
@@ -135,7 +140,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
     # if not (start_time <= current_time <= end_time):
     #     await websocket.send_json({
     #         "type": "error",
-    #         "content": "Classroom is Closed! ⏳ Live group sessions are only open between 8:00 PM and 9:00 PM. Please use the Personal Chatbot for 24/7 help."
+    #         "content": "Classroom is Closed! ΓÅ│ Live group sessions are only open between 8:00 PM and 9:00 PM. Please use the Personal Chatbot for 24/7 help."
     #     })
     #     await websocket.close()
     #     return
@@ -165,54 +170,42 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     shutil.unpack_archive(zip_name, faiss_dir)
                     
                     from langchain_community.vectorstores import FAISS
-                    vector_store = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
-                    classroom_brains[classroom_id] = vector_store
+                    from app.core.memory import HybridEnsembleRetriever
+                    import pickle
+                    
+                    faiss_vs = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
+                    faiss_retriever = faiss_vs.as_retriever(search_kwargs={"k": 10})
+                    
+                    bm25_path = os.path.join(faiss_dir, "bm25.pkl")
+                    if os.path.exists(bm25_path):
+                        with open(bm25_path, "rb") as f:
+                            bm25_retriever = pickle.load(f)
+                        bm25_retriever.k = 10
+                        retriever = HybridEnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.4, 0.6])
+                    else:
+                        retriever = faiss_retriever
+                        
+                    classroom_brains[classroom_id] = retriever
                     
                     os.remove(zip_name)
                     shutil.rmtree(faiss_dir)
-                except Exception as e:
-                    print("Failed to download FAISS from storage:", e)
+                except Exception as faiss_err:
+                    print("Could not lazy load FAISS:", faiss_err)
                     vector_store = None
             
-            if vector_store:
-                # Trigger initial overview
-                docs = vector_store.similarity_search("syllabus overview important topics concepts", k=4)
-                context = "\n".join([doc.page_content for doc in docs])
-                
+            retriever = classroom_brains.get(classroom_id)
+            if retriever:
+                try:
+                    docs = retriever.invoke("syllabus overview important topics concepts")[:4]
+                    context = "\n\n---\n\n".join([doc.page_content for doc in docs])
+                except Exception as e:
+                    pass
                 ctx = manager.classroom_contexts.get(classroom_id, {"subject_name": "General Topic", "topic_name": "General Lecture"})
                 prof = manager.student_profiles.get(student_id, {"engagement_level": "Unknown"})
                 
-                state = {
-                    "classroom_id": classroom_id,
-                    "subject_name": ctx["subject_name"],
-                    "topic_name": ctx["topic_name"],
-                    "lecture_date": ctx.get("lecture_date", "Today"),
-                    "active_students": student_name,
-                    "student_name": student_name,
-                    "student_profile": f"Engagement Level: {prof.get('engagement_level', 'Unknown')}, Total Messages: {prof.get('total_messages_sent', 0)}",
-                    "chat_history": "No previous history.",
-                    "question": "[SYSTEM_INIT] Welcome the student. DO NOT teach a specific deep concept yet. Your ONLY job right now is to provide a 'Syllabus Overview / Index' of this PDF. List the main topics and highlight 2-3 exam-important areas. Use beautiful Markdown.",
-                    "context": context,
-                    "used_analogies": [],
-                    "strike_count": 0,
-                    "is_disruptive": False,
-                    "is_abusive": False
-                }
-                import asyncio
-                result = await asyncio.to_thread(classroom_app.invoke, state)
-                board_content = result.get("board_content", "")
-                chat_content = result.get("chat_content", "SILENCE")
+                # We no longer trigger a SYSTEM_INIT AI response because it overrides the Course Tour UI.
+                # Do not send any system message here to avoid spamming the UI.
                 
-                await websocket.send_json({
-                    "type": "teaching",
-                    "sender": "AI Teacher",
-                    "chat_content": chat_content,
-                    "board_content": board_content
-                })
-                
-                if chat_content.upper() != "SILENCE" and "SILENCE" not in chat_content[:10].upper():
-                    manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
-                    
         except Exception as init_err:
             print("Init Error:", init_err)
         # ------------------------------------------
@@ -240,16 +233,17 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
             # })
             
             try:
-                vector_store = classroom_brains.get(classroom_id)
-                # FAISS is loaded at connection time. Just get it.
+                retriever = classroom_brains.get(classroom_id)
 
-                if vector_store:
-                    docs = vector_store.similarity_search(data, k=6)
-                    context = "\n".join([doc.page_content for doc in docs])
+                if retriever:
+                    history = manager.classroom_history.get(classroom_id, [])[-5:-1]
+                    chat_history_str = "\n".join(history) if history else "No previous history."
+                    
+                    context = ""
                 else:
                     context = "No specific lecture material found. Please ask the teacher to upload a PDF."
                 
-                history = manager.classroom_history[classroom_id][-15:-1]
+                history = manager.classroom_history[classroom_id][-5:-1]
                 chat_history_str = "\n".join(history) if history else "No previous history."
                 
                 active_students = ", ".join(manager.get_active_students(classroom_id))
@@ -261,6 +255,7 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 current_strikes = manager.strikes.get(classroom_id, {}).get(student_id, 0)
                 
                 state = {
+                    "retriever": retriever,
                     "classroom_id": classroom_id,
                     "subject_name": ctx["subject_name"],
                     "topic_name": ctx["topic_name"],
@@ -279,12 +274,11 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 
                 # Call the Multi-Agent Pipeline
                 try:
-                    import asyncio
-                    result = await asyncio.to_thread(classroom_app.invoke, state)
+                    result = await classroom_app.ainvoke(state)
                     manager.used_analogies[classroom_id] = result.get("used_analogies", [])
                     
                     board_content = result.get("board_content", "")
-                    chat_content = result.get("chat_content", "SILENCE")
+                    chat_content = result.get("chat_content", "")
                     
                     # Check Moderation Output from the Router Node
                     is_disruptive = result.get("is_disruptive", False)
@@ -297,19 +291,19 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     if awarded_xp > 0:
                         try:
                             # Safely fetch current XP from Supabase to increment it
-                            xp_res = supabase_new.table('student_profiles').select('xp_points').eq('student_id', student_id).execute()
-                            current_xp = xp_res.data[0].get('xp_points', 0) if xp_res.data else 0
-                            new_xp = current_xp + awarded_xp
+                            # xp_res = supabase_new.table('student_profiles').select('xp_points').eq('student_id', student_id).execute()
+                            # current_xp = xp_res.data[0].get('xp_points', 0) if xp_res.data else 0
+                            # new_xp = current_xp + awarded_xp
                             
                             # Update in DB
-                            supabase_new.table('student_profiles').update({"xp_points": new_xp}).eq('student_id', student_id).execute()
+                            # supabase_new.table('student_profiles').update({"xp_points": new_xp}).eq('student_id', student_id).execute()
                             
-                            # Send award event directly to the user
+                            # Send award event directly to the user (frontend can handle visual without DB update for now)
                             await websocket.send_json({
                                 "type": "award",
                                 "student": student_name,
                                 "points": awarded_xp,
-                                "content": f"🎉 You earned {awarded_xp} XP for a brilliant answer!"
+                                "content": f"≡ƒÄë You earned {awarded_xp} XP for a brilliant answer!"
                             })
                         except Exception as xp_err:
                             print("Error updating XP:", xp_err)
@@ -330,12 +324,15 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 chat_content = f"I'm sorry, my AI brain encountered an error: {str(e)}"
                 board_content = ""
 
-            await websocket.send_json({
+            payload = {
                 "type": "teaching",
                 "sender": "AI Teacher",
                 "chat_content": chat_content,
                 "board_content": board_content
-            })
+            }
+            print(f"DEBUG SENDING WEBSOCKET: {payload}")
+            
+            await websocket.send_json(payload)
             
     except WebSocketDisconnect:
         manager.disconnect(websocket, classroom_id)

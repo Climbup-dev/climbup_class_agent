@@ -1,10 +1,11 @@
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import PGVector
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
-import litellm
 import json
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
 
 def get_embeddings_model():
     # Utilizing Gemini for embeddings given user's availability of Gemini
@@ -63,13 +64,9 @@ Chat History:
 Latest Question: {query}
 Optimal Search Query:"""
     try:
-        response = litellm.completion(
-            model="groq/llama3-8b-8192",  # Fast model for quick rewriting
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=50
-        )
-        reformulated = response.choices[0].message.content.strip()
+        llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+        response = llm.invoke([HumanMessage(content=prompt)])
+        reformulated = response.content.strip()
         # Fallback if LLM output is too long or weird
         if len(reformulated) > 150 or not reformulated:
             return query
@@ -89,7 +86,7 @@ def rerank_documents(query: str, documents: list, top_k: int = 3) -> list:
     # To save tokens and time, we pass all chunks in one prompt.
     chunks_text = ""
     for i, doc in enumerate(documents):
-        chunks_text += f"\n--- Chunk {i} ---\n{doc.page_content[:400]}...\n" # Limit text per chunk to save context window
+        chunks_text += f"\n--- Chunk {i} ---\n{doc.page_content}\n" 
         
     prompt = f"""You are a relevance scoring engine.
 Rate how relevant each chunk is to the user query on a scale of 0 to 10.
@@ -100,13 +97,9 @@ User Query: "{query}"
 Respond STRICTLY in JSON format with a list of scores corresponding to each chunk index. Example: {{"scores": [9, 2, 0, 7, ...]}}"""
     
     try:
-        response = litellm.completion(
-            model="groq/llama3-8b-8192", 
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0
-        )
-        content = response.choices[0].message.content
+        llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+        response = llm.invoke([HumanMessage(content=prompt)])
+        content = response.content
         data = json.loads(content)
         scores = data.get("scores", [])
         
@@ -139,8 +132,8 @@ def retrieve_context(query: str, classroom_id: int, chat_history: str = "", top_
         filter={"classroom_id": classroom_id}
     )
     
-    # 3. Rerank down to top_k
-    best_results = rerank_documents(standalone_query, results, top_k=top_k)
+    # 3. Skip reranking (LLM can handle context window easily)
+    best_results = results[:6]  # Just take top 6 to be safe, no data lost to small LLM judge
     
     # 4. Format context with citations
     context_parts = []

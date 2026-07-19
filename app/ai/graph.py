@@ -1,16 +1,18 @@
+import asyncio
+import re
 from typing import TypedDict, List, Dict, Any
-from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
-from duckduckgo_search import DDGS
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 
 class ClassroomState(TypedDict):
+    retriever: Any
     classroom_id: str
     subject_name: str
     topic_name: str
@@ -22,345 +24,218 @@ class ClassroomState(TypedDict):
     question: str
     context: str
     used_analogies: List[str]
-    
-    # Moderation State
     strike_count: int
     is_disruptive: bool
     is_abusive: bool
-    
-    # Gamification
     awarded_xp: int
-    
-    # Smart Router Output
-    should_intervene: bool
-    intent_type: str      # technical_question | assignment_extraction | casual_chat | concept_explanation | summary_request | comparison_request | out_of_scope
-    student_emotion: str  # curious | confused | stressed | bored | confident | frustrated
-    specific_need: str    # Precise description of what the student actually wants
-    teaching_strategy: str
-    image_url: str
-    requires_image: bool
-    
-    # Final Output
     board_content: str
     chat_content: str
-import os
 
-import os
+# LLMs are now dynamically loaded per-request for Load Balancing
 
-# 1. Primary: Groq Llama 3 70B (Fast, High Quality)
-llm_groq = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
-llm_groq_json = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7).bind(response_format={"type": "json_object"})
-
-# 2. Fallback 1: OpenRouter Llama 3 8B (Safety net, highly reliable)
-llm_openrouter = ChatOpenAI(
-    model="meta-llama/llama-3-8b-instruct:free", 
-    openai_api_key=os.environ.get("OPENROUTER_API_KEY"), 
-    openai_api_base="https://openrouter.ai/api/v1",
-    temperature=0.7
-)
-
-# 3. Fallback 2: Gemini 3.1 Flash Lite
-llm_gemini = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.7)
-
-# Build the Ultimate Unbreakable Brain (Groq -> OpenRouter -> Gemini)
-llm = llm_groq.with_fallbacks([llm_openrouter, llm_gemini])
-llm_json = llm_groq_json.with_fallbacks([llm_openrouter, llm_gemini])
-
-# Helper function to extract text safely (handles both str and list responses)
 def extract_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    elif isinstance(content, list):
-        return "".join([str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content])
+    if isinstance(content, str): return content
+    elif isinstance(content, list): return "".join([str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in content])
     return str(content)
 
-# Helper function to clean JSON from any model output
 def clean_json(content: Any) -> str:
     text = extract_text(content)
-    return text.replace("```json", "").replace("```", "").strip()
-
-
-
-def router_node(state: ClassroomState) -> Dict[str, Any]:
-    """Mind-Reader Agent: Deeply classifies the student's intent, emotion, and exact need before routing."""
-    
-    # HARDCODED BYPASS FOR SYSTEM STARTUP
-    # This guarantees zero hallucination and blazing fast load times for the initial syllabus overview.
-    if "[SYSTEM_INIT]" in state.get("question", ""):
-        return {
-            "should_intervene": True,
-            "intent_type": "summary_request",
-            "student_emotion": "curious",
-            "specific_need": "Student has just opened the chat. Extract a highly engaging Syllabus Overview and list the most important exam topics from the PDF.",
-            "is_disruptive": False,
-            "is_abusive": False
-        }
-        
-    prompt = PromptTemplate.from_template("""
-    You are an expert Student Psychology Analyst and Intent Classifier for an AI Tutor.
-    Your job is to deeply understand what the student ACTUALLY wants — their intent, their emotion, and their specific need.
-    Do NOT answer the question. Just analyze it with precision.
-    
-    Subject: {subject_name} | Topic: {topic_name}
-    Student Name: {student_name}
-    Student Message: {question}
-    Recent Chat History: {chat_history}
-    
-    ANALYSIS TASK:
-    Respond strictly in JSON format with these keys:
-    
-    1. "intent_type": Classify the student's intent into EXACTLY ONE of:
-       - "assignment_extraction": Student wants questions, assignments, or practice problems listed.
-       - "concept_explanation": Student wants a concept explained simply (e.g., "what is X", "explain X").
-       - "comparison_request": Student wants to compare two things (e.g., "difference between A and B").
-       - "summary_request": Student wants a brief summary or overview of a topic.
-       - "technical_question": Student has a specific deep technical question from the syllabus.
-       - "casual_chat": Student is greeting, venting stress, or making small talk.
-       - "abusive": Student is using swear words, profanity, or extreme disrespect.
-       - "disruptive": Student is deliberately ignoring the topic or being disrespectful.
-    
-    2. "student_emotion": Classify into ONE of: "curious", "confused", "stressed", "bored", "confident", "frustrated", "happy".
-    
-    3. "specific_need": In one precise sentence, state EXACTLY what the student wants. This will be passed directly to the Teacher Agent. Be very specific.
-       Examples: 
-       - "Student wants all assignment questions listed from the PDF verbatim."
-       - "Student wants a simple, beginner-friendly explanation of Cybercrime definition."
-       - "Student wants to compare Doctrinal vs Consensual approach to contract law."
-       - "Student is stressed about exams and needs emotional support, not a lesson."
-    
-    4. "should_intervene": true if the AI should respond, false only if the message is a simple "ok", "hmm", or doesn't need a response.
-    
-    JSON Output:
-    """)
-    
-    safe_question = state.get("question", "").replace("{", "{{").replace("}", "}}")
-    safe_history = state.get("chat_history", "").replace("{", "{{").replace("}", "}}")
-    
     try:
-        response = llm_json.invoke(prompt.format(
-            subject_name=state["subject_name"],
-            topic_name=state["topic_name"],
-            student_name=state["student_name"],
-            question=safe_question,
-            chat_history=safe_history
-        ))
-        raw_content = clean_json(response.content)
-        result = json.loads(raw_content)
-        logging.info(f"Router Intent: {result}")
-        return {
-            "should_intervene": result.get("should_intervene", True),
-            "intent_type": result.get("intent_type", "technical_question"),
-            "student_emotion": result.get("student_emotion", "curious"),
-            "specific_need": result.get("specific_need", state["question"]),
-            "is_disruptive": result.get("intent_type") == "disruptive",
-            "is_abusive": result.get("intent_type") == "abusive"
-        }
-    except Exception as e:
-        logging.error(f"Router Error: {e}")
-        return {
-            "should_intervene": True,
-            "intent_type": "technical_question",
-            "student_emotion": "curious",
-            "specific_need": state["question"],
-            "is_disruptive": False,
-            "is_abusive": False
-        }
+        # Find the outermost JSON object
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            return text[start:end+1]
+        return text
+    except Exception:
+        return text
 
-def teacher_node(state: ClassroomState) -> Dict[str, Any]:
-    """Laser-Focused Teacher: Uses Router's classified intent to build a surgically precise teaching strategy."""
-    prompt = PromptTemplate(
-        template="""You are the Brain (Teacher Agent) of a highly advanced intelligent classroom.
-    
-    Student: {student_name}
-    Emotion/State: {student_emotion}
-    Class: {subject_name} ({topic_name})
-    
-    STUDY MATERIAL CONTEXT (Retrieved Chunks from Vector Database):
-    {context}
-    
-    You are the 'Brain' of a World-Class Master Pedagogue.
-    The Router Agent has already analyzed the student deeply. Use this analysis to craft a LASER-FOCUSED teaching strategy.
-    DO NOT waste time re-analyzing. Act on the classified intent immediately.
-    
-    Subject: {subject_name} | Topic: {topic_name}
-    
-    --- ROUTER INTELLIGENCE (Act on this) ---
-    Student's Classified Intent: {intent_type}
-    Student's Emotion Right Now: {student_emotion}
-    What Student ACTUALLY Needs: {specific_need}
-    ----------------------------------------
-    
-    Context from PDF (Use ONLY this. Never hallucinate):
-    {context}
-    
-    Full Student Message (for nuance): {question}
-    Chat History: {chat_history}
-    Already Used Analogies (DO NOT REPEAT): {used_analogies}
-    
-    TASK: Respond in JSON format:
-    1. "awarded_xp": 10 or 20 if student correctly answered a previous challenge, 0 otherwise.
-    2. "requires_image": true ONLY if a visual analogy would genuinely help. False for assignments, comparisons, summaries.
-    3. "strategy": 3-5 sentence precise teaching plan for the Persona Agent. MUST directly address "{specific_need}". 
-       - Be FLUID and NATURAL. Give the student EXACTLY what they asked for.
-       - HIGH-PRECISION GROUNDING: If the student asks about a specific concept found in the PDF, quote the exact sentence verbatim and base your explanation strictly on it.
-       - EXTERNAL/APPLICATION QUESTIONS: If the student asks to solve a specific case study (e.g., Suhas Katti) that is NOT in the PDF, DO NOT say "Out of syllabus" and refuse. Instead, acknowledge it's an external case, but use the core theories from the PDF (e.g., Jurisdiction approaches) to brilliantly solve and analyze their exact question.
-       - If they asked for a LIST of questions, just list them verbatim.
-       - Match your depth/tone to the student's emotion: If confused → extra simple. If stressed → gentle. If curious → exciting.
-       - For conceptual teaching: Plan a Hook → Simple Breakdown → Fresh Analogy → Micro-Challenge.
-    
-    JSON Output:
-    """)
-    
-    safe_context = state.get("context", "").replace("{", "{{").replace("}", "}}")
-    safe_question = state.get("question", "").replace("{", "{{").replace("}", "}}")
-    safe_history = state.get("chat_history", "").replace("{", "{{").replace("}", "}}")
-    
-    formatted_prompt = prompt.format(
-        subject_name=state["subject_name"],
-        topic_name=state["topic_name"],
-        intent_type=state.get("intent_type", "technical_question"),
-        student_emotion=state.get("student_emotion", "curious"),
-        specific_need=state.get("specific_need", safe_question),
-        context=safe_context,
-        question=safe_question,
-        chat_history=safe_history,
-        used_analogies=", ".join(state["used_analogies"]) if state.get("used_analogies") else "None",
-        student_name=state.get("student_name", "")
-    )
-    
-    try:
-        response = llm_json.invoke(formatted_prompt)
-        raw_content = clean_json(response.content)
-        result = json.loads(raw_content)
-        strategy = result.get("strategy", "Teach the concept beautifully.")
-        awarded_xp = result.get("awarded_xp", 0)
-        requires_image = result.get("requires_image", False)
+# Initialize FlashRank globally so it doesn't reload the model every time
+try:
+    from flashrank import Ranker, RerankRequest
+    # cache_dir ensures it doesn't redownload models constantly
+    ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="flashrank_cache")
+    FLASHRANK_AVAILABLE = True
+except Exception as e:
+    logging.error(f"FlashRank failed to initialize: {e}")
+    FLASHRANK_AVAILABLE = False
+
+
+class SingleShotApp:
+    async def generate_multi_queries(self, question: str, chat_history: str = "") -> Dict[str, Any]:
+        prompt = PromptTemplate.from_template("""
+        You are an expert at analyzing a student's question for an Educational AI Tutor.
         
-        # Track used analogies to avoid repetition
-        new_analogies = state.get("used_analogies", [])
-        if "analogy" in strategy.lower():
-            new_analogies.append(strategy[:60] + "...")
+        Recent Chat History: {chat_history}
+        Latest Question: {question}
+        
+        TASK 1: Intent Classification
+        Determine if the student is asking a question that requires searching the course textbook (PDF) or if they are asking a general knowledge question/making casual chat.
+        - Set "source_needed" to "PDF" if they ask about concepts, definitions, assignments, or course material (even if referencing history).
+        - Set "source_needed" to "General_Knowledge" if they ask for a joke, coding help, general facts outside the syllabus, or say hello.
+        
+        TASK 2: User Angle Detection
+        Determine HOW the student wants the answer formatted based on their tone and request:
+        - Provide a 1-sentence instruction for the main AI on how to format the answer (e.g. "Use simple analogies", "Extract exact points", "Standard detailed explanation").
+        
+        TASK 3: Search Query Generation (Only if PDF needed)
+        If PDF is needed, generate the SINGLE best search query to find this information in the textbook. If the user says "explain it more", use the chat history to know what "it" is and write a complete search query (e.g. "TCP protocol details").
+        
+        Respond STRICTLY in JSON format:
+        {{
+            "source_needed": "PDF or General_Knowledge",
+            "user_angle_instruction": "Your 1-sentence instruction",
+            "search_query": "The optimal search query string"
+        }}
+        """)
+        try:
+            from app.core.llm_balancer import get_balanced_fast_llm
+            llm = get_balanced_fast_llm()
+            response = await llm.ainvoke(prompt.format(question=question, chat_history=chat_history[-500:] if chat_history else "None"))
+            raw = clean_json(response.content)
+            data = json.loads(raw)
+            return data
+        except Exception as e:
+            logging.error(f"Multi-query generation failed: {e}")
+            return {"source_needed": "PDF", "user_angle_instruction": "Standard detailed educational explanation.", "search_query": question}
+
+    async def ainvoke(self, state: ClassroomState) -> Dict[str, Any]:
+        question = state.get("question", "")
+        
+        # 1. Handle SYSTEM_INIT gracefully (Zero hallucination, ultra fast)
+        if "[SYSTEM_INIT]" in question:
+            return {
+                "board_content": "# Welcome to the Class!\n\nI am your AI Professor. We will be studying **" + state.get("subject_name", "this topic") + "**. Ask me anything!",
+                "chat_content": "SILENCE"
+            }
             
-        logging.info(f"Teacher Strategy: {strategy[:100]}")
-        return {"teaching_strategy": strategy, "used_analogies": new_analogies, "awarded_xp": awarded_xp, "requires_image": requires_image}
-    except Exception as e:
-        logging.error(f"Teacher Error: {e}")
-        return {"teaching_strategy": "Explain the concept from the PDF in a fun and simple way.", "used_analogies": state.get("used_analogies", []), "awarded_xp": 0, "requires_image": False}
-
-def visualizer_node(state: ClassroomState) -> Dict[str, Any]:
-    """Generates an image related to the teaching strategy using Pollinations AI."""
-    if not state.get("requires_image", False):
-        return {"image_url": ""}
+        # 2. Smart Routing, Angle Detection & Multi-Query Retrieval
+        retriever = state.get("retriever")
+        context = "No context available."
+        chat_history = state.get("chat_history", "")
         
-    strategy = state.get("teaching_strategy", "")
-    
-    keyword_prompt = PromptTemplate.from_template("""
-    You are an expert prompt engineer for an AI Image Generator.
-    Read the following teaching strategy and extract the core concept or analogy.
-    Generate a highly descriptive, visually stunning digital art prompt (10-15 words) representing this concept. 
-    Make it look premium, educational, and cinematic. Do not include text in the image.
-    
-    Strategy: {strategy}
-    Image Prompt only:
-    """)
-    
-    try:
-        raw_text = extract_text(llm.invoke(keyword_prompt.format(strategy=strategy)).content)
-        keyword = raw_text.strip().strip('"')
+        logging.info(f"Analyzing Intent and Generating search query for: {question}")
+        analysis = await self.generate_multi_queries(question, chat_history)
+        source_needed = analysis.get("source_needed", "PDF")
+        user_angle_instruction = analysis.get("user_angle_instruction", "Standard detailed educational explanation.")
+        search_query = analysis.get("search_query", question)
         
-        import urllib.parse
-        encoded_keyword = urllib.parse.quote(keyword)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_keyword}?width=800&height=400&nologo=true"
+        if source_needed == "General_Knowledge":
+            logging.info("Routing to General Knowledge (Skipping PDF Search)")
+            context = "GENERAL_KNOWLEDGE_MODE"
+        elif retriever and search_query.strip():
+            logging.info(f"Executing PDF search for: '{search_query}'")
+            
+            all_docs = []
+            seen_content = set()
+            
+            try:
+                docs = retriever.invoke(search_query)
+                for d in docs:
+                    if d.page_content not in seen_content:
+                        all_docs.append(d)
+                        seen_content.add(d.page_content)
+            except Exception as e:
+                logging.error(f"Retriever error on query '{search_query}': {e}")
+            
+            if all_docs:
+                if FLASHRANK_AVAILABLE:
+                    logging.info(f"Applying FlashRank Compression on {len(all_docs)} unique chunks...")
+                    try:
+                        passages = [{"id": i, "text": doc.page_content, "meta": doc.metadata} for i, doc in enumerate(all_docs)]
+                        rerankrequest = RerankRequest(query=question, passages=passages)
+                        results = ranker.rerank(rerankrequest)
+                        
+                        # Take top 6 most relevant chunks so we don't miss any assignment questions
+                        top_6_chunks = [res["text"] for res in results[:6]]
+                        context = "\n\n---\n\n".join(top_6_chunks)
+                        logging.info("FlashRank successfully reduced context size.")
+                    except Exception as e:
+                        logging.error(f"FlashRank Error: {e}. Falling back to normal context.")
+                        context = "\n\n---\n\n".join([doc.page_content for doc in docs[:6]])
+                else:
+                    context = "\n\n---\n\n".join([doc.page_content for doc in docs[:6]])
+            else:
+                context = "DATA NOT AVAILABLE IN PDF"
         
-    except Exception as e:
-        logging.error(f"Image Generation failed: {e}")
-        image_url = ""
+        # 3. The Super Prompt (Single Shot reasoning + formatting)
+        super_prompt = PromptTemplate.from_template("""
+        You are the Ultimate AI Professor.
+        Student Name: {student_name}
+        Subject: {subject_name} | Topic: {topic_name}
         
-    return {"image_url": image_url}
+        Student's Question: {question}
+        Chat History (Context only): {chat_history}
+        
+        STUDENT's ANGLE & REQUIRED FORMATTING:
+        {user_angle_instruction}
+        
+        PDF CONTEXT:
+        {context}
+        
+        YOUR TASK:
+        Generate a beautiful educational response in JSON format.
+        
+        RULES:
+        1. "chat_content": MUST ALWAYS BE EXACTLY THE WORD 'SILENCE'.
+        2. "board_content": This is the main teaching board. Write in a flawless, natural mix of Hinglish and English.
+           - CRITICAL ANTI-HALLUCINATION RULE: If the student asks for assignments or questions, you MUST ONLY provide exact quotes from the "PDF CONTEXT". If you cannot find any assignments in the context, DO NOT invent your own. Instead, politely reply: "> Sorry, mujhe PDF notes mein assignment questions nahi mile."
+           - IF PDF CONTEXT IS "GENERAL_KNOWLEDGE_MODE": The student is just chatting or asking a general question. Ignore the PDF rules. Answer them directly, creatively, and intelligently using your own knowledge. You can tell jokes, write code, or just chat normally.
+           - IF PDF CONTEXT CONTAINS ACTUAL TEXT: 
+             - EXACT QUOTE: If the user asks for assignments or questions, you MUST extract ALL of them and display them in Markdown quote blocks (`> "..."`). DO NOT change a single letter of the PDF text.
+             - IMAGES & DIAGRAMS: If the PDF Context contains an image URL like `![Diagram](URL)`, you MUST show it to the student! 
+               Format it beautifully like this:
+               ```markdown
+               <br/>
+               
+               ![Diagram Name](URL)
+               
+               *👆 Educational Diagram / Chart*
+               <br/>
+               ```
+             - EXPLANATION: Explain the quotes and diagrams beautifully in Hinglish.
+           - IF PDF CONTEXT IS "DATA NOT AVAILABLE IN PDF": State clearly that the data is not in the PDF and do not invent assignments.
+        
+        RESPOND STRICTLY IN JSON FORMAT:
+        {{
+            "board_content": "Your beautifully formatted Markdown explanation with exact quotes here.",
+            "chat_content": "SILENCE"
+        }}
+        """)
+        
+        try:
+            safe_question = question.replace("{", "{{").replace("}", "}}")
+            safe_history = state.get("chat_history", "").replace("{", "{{").replace("}", "}}")
+            safe_user_angle = user_angle_instruction.replace("{", "{{").replace("}", "}}")
+            
+            formatted = super_prompt.format(
+                student_name=state.get("student_name", "Student"),
+                subject_name=state.get("subject_name", ""),
+                topic_name=state.get("topic_name", ""),
+                question=safe_question,
+                chat_history=safe_history,
+                user_angle_instruction=safe_user_angle,
+                context=context
+            )
+            from app.core.llm_balancer import get_balanced_text_llm
+            llm_text = get_balanced_text_llm().bind(response_format={"type": "json_object"})
+            response = await llm_text.ainvoke(formatted)
+            raw_content = clean_json(response.content)
+            result = json.loads(raw_content)
+            
+            return {
+                "board_content": result.get("board_content", "Error generating board."),
+                "chat_content": result.get("chat_content", "SILENCE"),
+                "awarded_xp": 10,
+                "used_analogies": []
+            }
+        except Exception as e:
+            logging.error(f"SingleShotApp Error: {e}")
+            return {
+                "board_content": f"Sorry, there was an error processing your request: {e}",
+                "chat_content": "SILENCE",
+                "awarded_xp": 0,
+                "used_analogies": []
+            }
 
-def persona_node(state: ClassroomState) -> Dict[str, Any]:
-    """The Actor: Emotionally calibrated response writer that fulfills the student's exact expectation."""
-    prompt = PromptTemplate.from_template("""
-    You are the Ultimate 1-on-1 Personal AI Tutor — the Actor who brings the Teaching Strategy to life.
-    Your voice must be emotionally calibrated to the student's current state and laser-focused on their exact need.
-    
-    Teaching Strategy (from Teacher Agent): {teaching_strategy}
-    Student's Intent Type: {intent_type}
-    Student's Current Emotion: {student_emotion}
-    Student Name: {student_name}
-    Awarded XP: {awarded_xp}
-    Image URL (if any): {image_url}
-    
-    HIGH EQ RULES:
-    1. Write in a flawless, natural mix of Hinglish and English. You are their favorite, cool, ultra-smart mentor.
-    2. Be FLUID and DIRECT. Give the student exactly what the Teaching Strategy dictates without sounding robotic.
-       - If the student asked for an answer to a question, explain it clearly on the board and say something encouraging in the chat (e.g., "Ye raha tera answer, ekdum simple words mein!").
-       - If the student asked for a list of assignments, list them nicely on the board.
-       - If Awarded XP > 0: Celebrate their correct answer! 🎉🔥
-    
-    3. THE WOW-FACTOR TEACHING FRAMEWORK (Only apply this if teaching a new, deep concept):
-       - Step 1: THE HOOK 🪝 - Start with a relatable problem.
-       - Step 2: THE DEEP BREAKDOWN 🧠 - Break it into bite-sized steps.
-       - Step 3: THE ANALOGY 📖 - Invent a fresh real-world analogy.
-       - Step 4: THE MICRO-CHALLENGE 🎯 - Ask a quick test question.
-    
-    4. Code, Quotes & Technical Diagrams: 
-       - If the Teaching Strategy quotes a specific line from the PDF, you MUST display that quote prominently on the board using Markdown quote blocks (e.g., `> "The quoted text..."`) before explaining it.
-       - If the topic involves PROGRAMMING/CODING, write the code using Markdown fenced code blocks (```python ... ```).
-       - If the topic requires a flowchart or table, draw it using Markdown tables or ASCII art in the `board_content`.
-       
-    5. Board Formatting: The `board_content` MUST BE STUNNING. Use `# Headers`, `**Bold text**`, `>` quotes.
-    6. If an Image URL is provided, include it at the very end of the board_content: ![Visual]({image_url})
-    
-    RESPOND STRICTLY IN JSON FORMAT WITH THESE KEYS:
-    {{
-        "board_content": "The main technical teaching. MUST USE BEAUTIFUL MARKDOWN. Include technical diagrams (ASCII/Tables) if needed, and the Image URL at the end. Leave EMPTY if this is casual chat.",
-        "chat_content": "Short, highly emotional Hinglish chat response for the live chat. If board_content is heavy, chat_content MUST just be a short pointer like 'Look at the board!'. Includes jokes, warnings, or XP celebrations."
-    }}
-    """)
-    
-    try:
-        formatted_prompt = prompt.format(
-            teaching_strategy=state["teaching_strategy"],
-            intent_type=state.get("intent_type", "technical_question"),
-            student_emotion=state.get("student_emotion", "curious"),
-            student_name=state["student_name"],
-            awarded_xp=state.get("awarded_xp", 0),
-            image_url=state.get("image_url", "")
-        )
-        response = llm_json.invoke(formatted_prompt)
-        raw_content = clean_json(response.content)
-        result = json.loads(raw_content)
-        return {
-            "board_content": result.get("board_content", ""),
-            "chat_content": result.get("chat_content", "")
-        }
-    except Exception as e:
-        logging.error(f"Persona Error: {e}")
-        return {"board_content": "", "chat_content": "I'm having a little trouble thinking right now. Could you repeat that?"}
-
-# Define routing logic
-def route_after_router(state: ClassroomState) -> str:
-    if state.get("should_intervene"):
-        return "teacher_node"
-    return "end"
-
-# Build Graph
-workflow = StateGraph(ClassroomState)
-
-workflow.add_node("router_node", router_node)
-workflow.add_node("teacher_node", teacher_node)
-workflow.add_node("visualizer_node", visualizer_node)
-workflow.add_node("persona_node", persona_node)
-
-workflow.set_entry_point("router_node")
-workflow.add_conditional_edges("router_node", route_after_router, {
-    "teacher_node": "teacher_node",
-    "end": END
-})
-workflow.add_edge("teacher_node", "visualizer_node")
-workflow.add_edge("visualizer_node", "persona_node")
-workflow.add_edge("persona_node", END)
-
-classroom_app = workflow.compile()
-
+classroom_app = SingleShotApp()
