@@ -80,7 +80,7 @@ class ConnectionManager:
             
             # Record entry in session_students if not exists
             supabase_new.table('classroom_students').upsert({
-                "session_id": classroom_id,
+                "classroom_id": classroom_id,
                 "student_id": student_id
             }).execute()
         except Exception as e:

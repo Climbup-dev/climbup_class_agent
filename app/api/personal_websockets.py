@@ -66,7 +66,7 @@ class PersonalConnectionManager:
                 self.student_profiles[student_id] = prof_res.data[0]
             
             supabase_new.table('classroom_students').upsert({
-                "session_id": classroom_id,
+                "classroom_id": classroom_id,
                 "student_id": student_id
             }).execute()
         except Exception as e:
@@ -140,7 +140,7 @@ async def personal_websocket_endpoint(websocket: WebSocket, classroom_id: str, s
             # Save student message to Supabase
             try:
                 supabase_new.table('messages').insert({
-                    "session_id": classroom_id,
+                    "classroom_id": classroom_id,
                     "sender_id": student_id,
                     "sender_type": "student",
                     "sender_name": student_name,
@@ -198,7 +198,7 @@ async def personal_websocket_endpoint(websocket: WebSocket, classroom_id: str, s
                 # Save AI message to Supabase
                 try:
                     supabase_new.table('messages').insert({
-                        "session_id": classroom_id,
+                        "classroom_id": classroom_id,
                         "sender_id": None,
                         "sender_type": "ai",
                         "sender_name": "Personal Tutor AI",
