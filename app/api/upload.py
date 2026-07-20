@@ -233,7 +233,7 @@ def process_upload_in_background(
         llama_docs = parser.load_data(file_path)
         
         # --- MULTI-MODAL IMAGE EXTRACTION (PyMuPDF -> Supabase) ---
-        all_extracted_images = []
+        extracted_images_by_page = {}
         try:
             def upload_image_to_supabase(image_bytes, img_filename):
                 try:
@@ -258,7 +258,7 @@ def process_upload_in_background(
                     
                     if public_img_url:
                         logging.info(f"Extracted and uploaded image {img_filename} (No AI Description)")
-                        return f"\n\n--- DIAGRAM ON PAGE {page_num + 1} ---\n![Diagram]({public_img_url})\n---\n\n"
+                        return f"\n\n![Diagram]({public_img_url})\n\n"
                 except Exception as img_upload_err:
                     logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
                 return None
@@ -274,7 +274,9 @@ def process_upload_in_background(
                     # Process immediately instead of buffering to save memory
                     res = process_single_image(page_num, img_index, base_image)
                     if res:
-                        all_extracted_images.append(res)
+                        if page_num not in extracted_images_by_page:
+                            extracted_images_by_page[page_num] = []
+                        extracted_images_by_page[page_num].append(res)
                     
                     # Free up memory immediately
                     del base_image
@@ -290,11 +292,16 @@ def process_upload_in_background(
             logging.error(f"Image extraction failed: {e}")
         # ----------------------------------------------------------------
         
-        # Combine all pages
-        full_text = "\n\n".join([f"--- PAGE {i+1} START ---\n{doc.text}\n--- PAGE {i+1} END ---" for i, doc in enumerate(llama_docs)])
-        
-        if all_extracted_images:
-            full_text += "\n\n=== EXTRACTED DIAGRAMS AND IMAGES ===\n" + "".join(all_extracted_images)
+        # Combine all pages and inject images directly into their respective pages
+        full_text_pages = []
+        for i, doc in enumerate(llama_docs):
+            page_content = f"--- PAGE {i+1} START ---\n{doc.text}\n"
+            if i in extracted_images_by_page:
+                page_content += "\n[IMAGES EXTRACTED FROM THIS PAGE]:\n" + "".join(extracted_images_by_page[i])
+            page_content += f"\n--- PAGE {i+1} END ---"
+            full_text_pages.append(page_content)
+            
+        full_text = "\n\n".join(full_text_pages)
                 
         if not full_text.strip():
              raise ValueError("Could not extract any text or image data from the file.")
@@ -310,7 +317,7 @@ def process_upload_in_background(
             
             IMPORTANT RULES:
             1. ONE PAGE = ONE LESSON: The PDF TEXT is clearly divided by page markers (e.g., --- PAGE 1 START ---). You MUST generate exactly ONE single lesson for EVERY SINGLE PAGE. If there are 40 pages in the text, you MUST generate exactly 40 lessons. Combine all paragraphs, concepts, and images on that specific page into that one lesson. Do not skip any page!
-            2. EXACT QUOTE (TEXT + IMAGES) - CRITICAL: For "exact_quote", copy and paste the ENTIRE page text verbatim. If the page text contains Markdown images like `![Diagram](URL)`, you MUST NOT delete them! You MUST preserve the exact `![Diagram](URL)` tags in your "exact_quote" output at their original positions. Do NOT summarize or change a single word of the quote. If you strip the images, the system will break!
+            2. EXACT QUOTE (TEXT + IMAGES) - CRITICAL: For "exact_quote", copy and paste the ENTIRE page text verbatim. You MUST perfectly preserve all Markdown formatting, especially newlines (\\n). If there are Markdown tables (| col | col |) or bullet lists, preserve their exact line breaks so they render correctly. If the page contains images like `![Diagram](URL)`, you MUST NOT delete them! You MUST preserve the exact `![Diagram](URL)` tags in your "exact_quote" output. Do NOT summarize or change a single word of the quote. If you strip images or newlines, the system will break!
             3. HINGLISH EXPLANATION: The "explanation" MUST be in a flawless, natural mix of Hindi and English (Hinglish). 
             4. DETAILED & FUN: The explanation should be in FULL DETAIL. Break down the entire grouped concept using funny, real-world, everyday Indian analogies so the student feels "WOW, this is so easy to understand!". Use emojis to make it expressive.
             5. LAYOUT STRUCTURE: The "exact_quote" serves as the TOP section containing the original text and images. The "explanation" serves as the BOTTOM section containing only your Hinglish explanation. DO NOT put images in the explanation!
