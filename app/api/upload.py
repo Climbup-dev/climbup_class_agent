@@ -306,69 +306,104 @@ def process_upload_in_background(
         if not full_text.strip():
              raise ValueError("Could not extract any text or image data from the file.")
              
-        # --- GENERATE GUIDED TOUR JSON ---
+        # --- GENERATE GUIDED TOUR JSON (ROBUST CHUNKED ARCHITECTURE) ---
         try:
             tour_prompt = PromptTemplate.from_template("""
-            You are a super cool, ultra-smart Indian professor. You have been given the full text of a lecture PDF.
-            Your task is to convert this ENTIRE PDF into a highly detailed, structured "Guided Tour" course.
+            You are a super cool, ultra-smart professor. You have been given a chunk of text from a lecture PDF containing a few pages.
+            Your task is to generate explanations for EACH PAGE.
             
-            PDF TEXT:
-            {full_text}
+            TEXT CHUNK:
+            {text_chunk}
             
             IMPORTANT RULES:
-            1. ONE PAGE = ONE LESSON: The PDF TEXT is clearly divided by page markers (e.g., --- PAGE 1 START ---). You MUST generate exactly ONE single lesson for EVERY SINGLE PAGE. If there are 40 pages in the text, you MUST generate exactly 40 lessons. Combine all paragraphs, concepts, and images on that specific page into that one lesson. Do not skip any page!
-            2. EXACT QUOTE (TEXT + IMAGES) - CRITICAL: For "exact_quote", copy and paste the ENTIRE page text verbatim. You MUST perfectly preserve all Markdown formatting, especially newlines (\\n). If there are Markdown tables (| col | col |) or bullet lists, preserve their exact line breaks so they render correctly. If the page contains images like `![Diagram](URL)`, you MUST NOT delete them! You MUST preserve the exact `![Diagram](URL)` tags in your "exact_quote" output. Do NOT summarize or change a single word of the quote. If you strip images or newlines, the system will break!
-            3. HINGLISH EXPLANATION: The "explanation" MUST be in a flawless, natural mix of Hindi and English (Hinglish). 
-            4. DETAILED & FUN: The explanation should be in FULL DETAIL. Break down the entire grouped concept using funny, real-world, everyday Indian analogies so the student feels "WOW, this is so easy to understand!". Use emojis to make it expressive.
-            5. LAYOUT STRUCTURE: The "exact_quote" serves as the TOP section containing the original text and images. The "explanation" serves as the BOTTOM section containing only your Hinglish explanation. DO NOT put images in the explanation!
+            1. ONE PAGE = ONE LESSON: The TEXT CHUNK is clearly divided by page markers (e.g., --- PAGE 1 START ---). You MUST generate exactly ONE single lesson explanation for EVERY SINGLE PAGE provided. If there are 5 pages in this chunk, you MUST generate exactly 5 lessons.
+            2. EXPLANATION STYLE: The "explanation" MUST be in simple and clear English, mixed with easy-to-understand Hinglish where it helps clarify complex concepts. Use everyday real-world analogies so the student feels "WOW, this is so easy!". Use emojis. Keep it highly detailed.
+            3. DO NOT INCLUDE QUOTES: Do not copy the original text or images. Only provide the "topic" (a short title for the page) and your "explanation".
             
-            OUTPUT FORMAT (Strictly valid JSON only, no extra text):
+            OUTPUT FORMAT (Strictly valid JSON only):
             {{
-                "syllabus": ["Topic 1", "Topic 2", "Topic 3", "Topic 4", "...all topics..."],
                 "lessons": [
                     {{
-                        "topic": "Topic 1",
-                        "exact_quote": "The exact verbatim paragraph from the PDF here...",
-                        "explanation": "Bhai, isko aise samjho jaise... [Detailed, fun, Hinglish explanation with analogies]"
+                        "page_marker": "PAGE 1",
+                        "topic": "Title of the page",
+                        "explanation": "Simple clear English/Hinglish detailed explanation..."
                     }}
                 ]
             }}
             """)
             
-            llm_gemini = get_balanced_fast_llm()
-            tour_response = llm_gemini.invoke(tour_prompt.format(full_text=full_text))
+            import concurrent.futures
+            import json
             
-            content = tour_response.content
-            if isinstance(content, list):
-                content = "".join([str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content])
+            chunk_size = 5
             
-            content = content.strip()
-            if content.startswith("```json"): content = content[7:]
-            elif content.startswith("```"): content = content[3:]
-            if content.endswith("```"): content = content[:-3]
-            content = content.strip()
-            
-            start_idx = content.find('{')
-            end_idx = content.rfind('}')
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                content = content[start_idx:end_idx+1]
-            
-            is_valid = False
-            while content and not is_valid:
-                try:
-                    json.loads(content)
-                    is_valid = True
-                except json.JSONDecodeError as e:
-                    if content.endswith('}') or content.endswith(']'):
-                        content = content[:-1].strip()
-                    else:
-                        print(f"Failed to decode JSON: {e}")
-                        break
+            def process_chunk(chunk_start_idx, chunk_pages):
+                chunk_text = "\n\n".join(chunk_pages)
+                llm_gemini = get_balanced_fast_llm()
+                
+                for attempt in range(3):
+                    try:
+                        response = llm_gemini.invoke(tour_prompt.format(text_chunk=chunk_text))
+                        content = response.content
+                        if isinstance(content, list):
+                            content = "".join([str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content])
                         
+                        content = content.strip()
+                        if content.startswith("```json"): content = content[7:]
+                        elif content.startswith("```"): content = content[3:]
+                        if content.endswith("```"): content = content[:-3]
+                        content = content.strip()
+                        
+                        start_idx = content.find('{')
+                        end_idx = content.rfind('}')
+                        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                            content = content[start_idx:end_idx+1]
+                        
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict) and "lessons" in parsed:
+                            return parsed["lessons"]
+                    except Exception as e:
+                        logging.warning(f"Chunk starting at {chunk_start_idx} failed attempt {attempt+1}: {e}")
+                        import time
+                        time.sleep(2)
+                return []
+
+            # Execute in parallel using universal cluster
+            logging.info(f"Processing {len(full_text_pages)} pages in chunks of {chunk_size}...")
+            futures = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                for i in range(0, len(full_text_pages), chunk_size):
+                    chunk = full_text_pages[i:i + chunk_size]
+                    futures.append((i, executor.submit(process_chunk, i, chunk)))
+                
+                # Collect results in correct order
+                parsed_lessons = []
+                for i, future in futures:
+                    parsed_lessons.extend(future.result())
+
+            # Map generated explanations back to the exact quotes
+            final_lessons = []
+            syllabus = []
+            for i, page_text in enumerate(full_text_pages):
+                topic = parsed_lessons[i].get("topic", f"Topic {i+1}") if i < len(parsed_lessons) else f"Topic {i+1}"
+                explanation = parsed_lessons[i].get("explanation", "Explanation missing.") if i < len(parsed_lessons) else "Explanation missing."
+                
+                final_lessons.append({
+                    "topic": topic,
+                    "exact_quote": page_text, # Pure Python assignment, 100% markdown preservation!
+                    "explanation": explanation
+                })
+                syllabus.append(topic)
+                
+            final_tour_json = {
+                "syllabus": syllabus,
+                "lessons": final_lessons
+            }
+            
             os.makedirs("uploads", exist_ok=True)
             tour_json_path = f"uploads/{classroom_id}_tour.json"
             with open(tour_json_path, "w", encoding="utf-8") as f:
-                f.write(content)
+                json.dump(final_tour_json, f, indent=4)
                 
             try:
                 with open(tour_json_path, "rb") as f:
