@@ -257,7 +257,19 @@ def process_upload_in_background(
                     public_img_url = upload_image_to_supabase(image_bytes, img_filename)
                     
                     if public_img_url:
-                        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                        # Compress image to fix Groq 400 Bad Request (size limits) and speed up APIs
+                        try:
+                            from PIL import Image
+                            import io
+                            img_obj = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                            img_obj.thumbnail((1024, 1024))
+                            buffered = io.BytesIO()
+                            img_obj.save(buffered, format="JPEG", quality=85)
+                            base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                            image_ext = "jpeg"
+                        except Exception as e:
+                            logging.warning(f"Image compression failed, using original: {e}")
+                            base64_image = base64.b64encode(image_bytes).decode('utf-8')
                         
                         import time
                         time.sleep(1) # Slight throttle for API stability
