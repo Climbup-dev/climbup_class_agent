@@ -50,15 +50,8 @@ def clean_json(content: Any) -> str:
     except Exception:
         return text
 
-# Initialize FlashRank globally so it doesn't reload the model every time
-try:
-    from flashrank import Ranker, RerankRequest
-    # cache_dir ensures it doesn't redownload models constantly
-    ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="flashrank_cache")
-    FLASHRANK_AVAILABLE = True
-except Exception as e:
-    logging.error(f"FlashRank failed to initialize: {e}")
-    FLASHRANK_AVAILABLE = False
+# FlashRank removed to prevent OOM crashes on 512MB RAM servers.
+FLASHRANK_AVAILABLE = False
 
 
 class SingleShotApp:
