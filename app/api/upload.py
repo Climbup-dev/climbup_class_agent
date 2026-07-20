@@ -227,79 +227,61 @@ def process_upload_in_background(
         parser = LlamaParse(
             api_key=os.environ.get("LLAMA_CLOUD_API_KEY"),
             result_type="markdown",
+            premium_mode=True,
             verbose=True
         )
         
+        logging.info("Starting Multi-Modal Extraction using LlamaParse Premium...")
         llama_docs = parser.load_data(file_path)
         
-        # --- MULTI-MODAL IMAGE EXTRACTION (PyMuPDF -> Supabase) ---
-        extracted_images_by_page = {}
-        try:
-            def upload_image_to_supabase(image_bytes, img_filename):
-                try:
-                    supabase_new.storage.from_(bucket_name).upload(img_filename, image_bytes, {"content-type": "image/jpeg"})
-                    return supabase_new.storage.from_(bucket_name).get_public_url(img_filename)
-                except Exception as e:
-                    logging.error(f"Image upload failed: {e}")
-                    return None
-            
-            logging.info("Starting Multi-Modal Image Extraction (Skipping LLM API)...")
-            pdf_document = fitz.open(file_path)
-            
-            def process_single_image(page_num, img_index, base_image):
-                img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
-                try:
-                    image_bytes = base_image["image"]
-                    image_ext = base_image["ext"]
-                    if image_ext.lower() not in ["png", "jpeg", "jpg"]:
-                        return None
-                        
-                    public_img_url = upload_image_to_supabase(image_bytes, img_filename)
-                    
-                    if public_img_url:
-                        logging.info(f"Extracted and uploaded image {img_filename} (No AI Description)")
-                        return f"\n\n![Diagram]({public_img_url})\n\n"
-                except Exception as img_upload_err:
-                    logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+        # --- UPLOAD INLINE IMAGES TO SUPABASE ---
+        import re
+        import requests
+        import mimetypes
+        
+        def upload_image_to_supabase(image_bytes, img_filename, content_type):
+            try:
+                supabase_new.storage.from_(bucket_name).upload(img_filename, image_bytes, {"content-type": content_type})
+                return supabase_new.storage.from_(bucket_name).get_public_url(img_filename)
+            except Exception as e:
+                logging.error(f"Image upload failed for {img_filename}: {e}")
                 return None
 
-            for page_num in range(len(pdf_document)):
-                page = pdf_document[page_num]
-                image_list = page.get_images(full=True)
-                
-                for img_index, img in enumerate(image_list):
-                    xref = img[0]
-                    base_image = pdf_document.extract_image(xref)
-                    
-                    # Process immediately instead of buffering to save memory
-                    res = process_single_image(page_num, img_index, base_image)
-                    if res:
-                        if page_num not in extracted_images_by_page:
-                            extracted_images_by_page[page_num] = []
-                        extracted_images_by_page[page_num].append(res)
-                    
-                    # Free up memory immediately
-                    del base_image
-                    import gc
-                    gc.collect()
-
-            pdf_document.close()
-            
-        except Exception as e:
-            logging.error(f"Image extraction failed: {e}")
-            
-        except Exception as e:
-            logging.error(f"Image extraction failed: {e}")
-        # ----------------------------------------------------------------
+        # Regex to find markdown images: ![alt](url)
+        img_regex = re.compile(r'!\[(.*?)\]\((.*?)\)')
         
-        # Combine all pages and inject images directly into their respective pages
         full_text_pages = []
         for i, doc in enumerate(llama_docs):
-            page_content = f"--- PAGE {i+1} START ---\n{doc.text}\n"
-            if i in extracted_images_by_page:
-                page_content += "\n[IMAGES EXTRACTED FROM THIS PAGE]:\n" + "".join(extracted_images_by_page[i])
-            page_content += f"\n--- PAGE {i+1} END ---"
+            page_text = doc.text
+            
+            # Find all images in this page's markdown
+            matches = img_regex.findall(page_text)
+            for img_index, (alt_text, img_url) in enumerate(matches):
+                if img_url.startswith("http"):
+                    try:
+                        # Download temporary image
+                        img_response = requests.get(img_url, timeout=15)
+                        if img_response.status_code == 200:
+                            image_bytes = img_response.content
+                            
+                            # Determine extension based on content type or URL
+                            content_type = img_response.headers.get('content-type', 'image/jpeg')
+                            ext = mimetypes.guess_extension(content_type) or ".jpg"
+                            img_filename = f"{classroom_id}_p{i+1}_{img_index}{ext}"
+                            
+                            # Upload to permanent Supabase storage
+                            public_url = upload_image_to_supabase(image_bytes, img_filename, content_type)
+                            if public_url:
+                                # Replace temporary URL with permanent URL in the text
+                                page_text = page_text.replace(img_url, public_url)
+                                logging.info(f"Replaced inline image {img_filename}")
+                    except Exception as e:
+                        logging.warning(f"Failed to process inline image {img_url}: {e}")
+            
+            page_content = f"--- PAGE {i+1} START ---\n{page_text}\n--- PAGE {i+1} END ---"
             full_text_pages.append(page_content)
+            
+        full_text = "\n\n".join(full_text_pages)
             
         full_text = "\n\n".join(full_text_pages)
                 
