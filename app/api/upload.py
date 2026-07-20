@@ -244,59 +244,77 @@ def process_upload_in_background(
                     logging.error(f"Image upload failed: {e}")
                     return None
             
-            logging.info("Starting PyMuPDF Image Extraction...")
+            logging.info("Starting PyMuPDF Image Extraction with Relative Y-Coordinates...")
             import fitz
             pdf_document = fitz.open(file_path)
             
-            def process_single_image(page_num, img_index, base_image):
-                img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
-                try:
-                    image_bytes = base_image["image"]
-                    image_ext = base_image["ext"]
-                    if image_ext.lower() not in ["png", "jpeg", "jpg"]:
-                        return None
-                        
-                    public_img_url = upload_image_to_supabase(image_bytes, img_filename)
-                    
-                    if public_img_url:
-                        logging.info(f"Extracted and uploaded image {img_filename}")
-                        return f"\n\n![Diagram]({public_img_url})\n\n"
-                except Exception as img_upload_err:
-                    logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
-                return None
-
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
-                image_list = page.get_images(full=True)
+                page_height = page.rect.height if page.rect.height > 0 else 1.0
+                blocks = page.get_text("dict").get("blocks", [])
                 
-                for img_index, img in enumerate(image_list):
-                    xref = img[0]
-                    base_image = pdf_document.extract_image(xref)
-                    
-                    # Process immediately
-                    res = process_single_image(page_num, img_index, base_image)
-                    if res:
-                        if page_num not in extracted_images_by_page:
-                            extracted_images_by_page[page_num] = []
-                        extracted_images_by_page[page_num].append(res)
-                    
-                    del base_image
-                    import gc
-                    gc.collect()
-
+                img_index = 0
+                for b in blocks:
+                    if b.get("type") == 1 and "image" in b: # Image block
+                        y0 = b.get("bbox", [0, 0, 0, 0])[1]
+                        relative_y = max(0.0, min(1.0, y0 / page_height))
+                        
+                        img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{b.get('ext', 'png')}"
+                        try:
+                            image_bytes = b["image"]
+                            image_ext = b.get("ext", "png")
+                            if image_ext.lower() not in ["png", "jpeg", "jpg"]:
+                                continue
+                                
+                            public_img_url = upload_image_to_supabase(image_bytes, img_filename)
+                            
+                            if public_img_url:
+                                logging.info(f"Extracted and uploaded image {img_filename} at Y={relative_y*100:.1f}%")
+                                res = (relative_y, f"\n\n![Diagram]({public_img_url})\n\n")
+                                
+                                if page_num not in extracted_images_by_page:
+                                    extracted_images_by_page[page_num] = []
+                                extracted_images_by_page[page_num].append(res)
+                                img_index += 1
+                        except Exception as img_upload_err:
+                            logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+                            
             pdf_document.close()
             
         except Exception as e:
             logging.error(f"Image extraction failed: {e}")
         # ----------------------------------------------------------------
         
-        # --- COMBINE TEXT AND IMAGES ---
+        # --- SMART Y-COORDINATE INTERLEAVING ---
         full_text_pages = []
         for i, doc in enumerate(llama_docs):
-            page_content = f"--- PAGE {i+1} START ---\n{doc.text}\n"
-            if i in extracted_images_by_page:
-                page_content += "\n[IMAGES EXTRACTED FROM THIS PAGE]:\n" + "".join(extracted_images_by_page[i])
-            page_content += f"\n--- PAGE {i+1} END ---"
+            page_text = doc.text.strip()
+            page_images = extracted_images_by_page.get(i, [])
+            
+            if page_images:
+                # Sort images by relative_y
+                page_images.sort(key=lambda x: x[0])
+                
+                # Split text into paragraphs
+                paragraphs = [p.strip() for p in page_text.split("\n\n") if p.strip()]
+                num_paras = len(paragraphs)
+                
+                if num_paras > 0:
+                    result_blocks = list(paragraphs)
+                    
+                    # Insert images from bottom to top to avoid messing up indices
+                    for rel_y, img_md in reversed(page_images):
+                        insert_idx = min(num_paras, max(0, int(rel_y * num_paras)))
+                        result_blocks.insert(insert_idx, img_md.strip())
+                        
+                    interleaved_text = "\n\n".join(result_blocks)
+                else:
+                    # Fallback if no paragraphs found
+                    interleaved_text = page_text + "\n\n" + "".join([img[1] for img in page_images])
+            else:
+                interleaved_text = page_text
+                
+            page_content = f"--- PAGE {i+1} START ---\n{interleaved_text}\n--- PAGE {i+1} END ---"
             full_text_pages.append(page_content)
             
         full_text = "\n\n".join(full_text_pages)
