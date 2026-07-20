@@ -256,7 +256,18 @@ def process_upload_in_background(
                 img_index = 0
                 for b in blocks:
                     if b.get("type") == 1 and "image" in b: # Image block
-                        y0 = b.get("bbox", [0, 0, 0, 0])[1]
+                        bbox = b.get("bbox", [0, 0, 0, 0])
+                        y0 = bbox[1]
+                        
+                        img_width = bbox[2] - bbox[0]
+                        img_height = bbox[3] - bbox[1]
+                        page_width = page.rect.width if page.rect.width > 0 else 1.0
+                        
+                        # Full page scan heuristic filter (85% of page width and height)
+                        if (img_width / page_width > 0.85) and (img_height / page_height > 0.85):
+                            logging.info(f"Skipping full-page scanned image on page {page_num+1} (W: {img_width:.1f}, H: {img_height:.1f})")
+                            continue
+                            
                         relative_y = max(0.0, min(1.0, y0 / page_height))
                         
                         img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{b.get('ext', 'png')}"
