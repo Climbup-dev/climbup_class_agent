@@ -290,43 +290,13 @@ def process_upload_in_background(
             logging.error(f"Image extraction failed: {e}")
         # ----------------------------------------------------------------
         
-        # --- SMART PARAGRAPH INTERLEAVING ---
+        # --- COMBINE TEXT AND IMAGES ---
         full_text_pages = []
         for i, doc in enumerate(llama_docs):
-            page_text = doc.text.strip()
-            page_images = extracted_images_by_page.get(i, [])
-            
-            if page_images:
-                # Split text into paragraphs (split by double newline)
-                paragraphs = [p.strip() for p in page_text.split("\n\n") if p.strip()]
-                num_paras = len(paragraphs)
-                num_images = len(page_images)
-                
-                if num_paras > 0 and num_images > 0:
-                    spacing = max(1, num_paras // num_images)
-                    result_blocks = []
-                    img_idx = 0
-                    
-                    for p_idx, p in enumerate(paragraphs):
-                        result_blocks.append(p)
-                        # Insert an image evenly spaced
-                        if (p_idx + 1) % spacing == 0 and img_idx < num_images:
-                            result_blocks.append(page_images[img_idx])
-                            img_idx += 1
-                            
-                    # Append any remaining images at the end
-                    while img_idx < num_images:
-                        result_blocks.append(page_images[img_idx])
-                        img_idx += 1
-                        
-                    interleaved_text = "\n\n".join(result_blocks)
-                else:
-                    # Fallback if no paragraphs found but images exist
-                    interleaved_text = page_text + "\n\n" + "".join(page_images)
-            else:
-                interleaved_text = page_text
-                
-            page_content = f"--- PAGE {i+1} START ---\n{interleaved_text}\n--- PAGE {i+1} END ---"
+            page_content = f"--- PAGE {i+1} START ---\n{doc.text}\n"
+            if i in extracted_images_by_page:
+                page_content += "\n[IMAGES EXTRACTED FROM THIS PAGE]:\n" + "".join(extracted_images_by_page[i])
+            page_content += f"\n--- PAGE {i+1} END ---"
             full_text_pages.append(page_content)
             
         full_text = "\n\n".join(full_text_pages)
