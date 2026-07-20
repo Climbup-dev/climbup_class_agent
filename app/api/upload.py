@@ -289,6 +289,12 @@ def process_upload_in_background(
                                 img_index += 1
                         except Exception as img_upload_err:
                             logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+                
+                # Explicitly clear memory to prevent OOM kills on small servers
+                del blocks
+                del page
+                import gc
+                gc.collect()
                             
             pdf_document.close()
             
