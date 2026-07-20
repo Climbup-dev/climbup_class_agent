@@ -232,103 +232,56 @@ def process_upload_in_background(
         
         llama_docs = parser.load_data(file_path)
         
-        # --- MULTI-MODAL IMAGE EXTRACTION (DISABLED FOR NOW) ---
+        # --- MULTI-MODAL IMAGE EXTRACTION (PyMuPDF -> Supabase) ---
         all_extracted_images = []
         try:
-            # User requested to disable image processing for now to speed up the system
-            if False:
-                def upload_image_to_supabase(image_bytes, img_filename):
-                    try:
-                        supabase_new.storage.from_(bucket_name).upload(img_filename, image_bytes, {"content-type": "image/jpeg"})
-                        return supabase_new.storage.from_(bucket_name).get_public_url(img_filename)
-                    except Exception as e:
-                        logging.error(f"Image upload failed: {e}")
-                        return None
-                
-                logging.info("Starting Multi-Modal Image Extraction...")
-                pdf_document = fitz.open(file_path)
-                
-                def process_single_image(page_num, img_index, base_image):
-                    img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
-                    try:
-                        image_bytes = base_image["image"]
-                        image_ext = base_image["ext"]
-                        if image_ext.lower() not in ["png", "jpeg", "jpg"]:
-                            return None
-                            
-                        public_img_url = upload_image_to_supabase(image_bytes, img_filename)
-                        
-                        if public_img_url:
-                            # Compress image to fix Groq 400 Bad Request (size limits) and speed up APIs
-                            try:
-                                from PIL import Image
-                                import io
-                                img_obj = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                                img_obj.thumbnail((1024, 1024))
-                                buffered = io.BytesIO()
-                                img_obj.save(buffered, format="JPEG", quality=85)
-                                base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                                image_ext = "jpeg"
-                            except Exception as e:
-                                logging.warning(f"Image compression failed, using original: {e}")
-                                base64_image = base64.b64encode(image_bytes).decode('utf-8')
-                            
-                            import time
-                            time.sleep(1) # Slight throttle for API stability
-                            
-                            llm_vision = get_balanced_vision_llm()
-                            response = None
-                            
-                            for attempt in range(5):
-                                try:
-                                    response = llm_vision.invoke([
-                                        HumanMessage(content=[
-                                            {"type": "text", "text": "Describe this educational diagram, chart, or image in detail. If it is just a full page of scanned text, reply with exactly 'IGNORE'."},
-                                            {"type": "image_url", "image_url": {"url": f"data:image/{image_ext};base64,{base64_image}"}}
-                                        ])
-                                    ])
-                                    break
-                                except Exception as e:
-                                    if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
-                                        logging.warning(f"Rate limit hit! Sleeping for {20 * (attempt + 1)} seconds...")
-                                        time.sleep(20 * (attempt + 1))
-                                    else:
-                                        raise e
-                                        
-                            if response is None:
-                                return None
-                                
-                            if isinstance(response.content, list):
-                                desc = " ".join([c.get("text", "") for c in response.content if isinstance(c, dict) and "text" in c]).strip()
-                            else:
-                                desc = str(response.content).strip()
-                            
-                            if desc != "IGNORE" and "IGNORE" not in desc:
-                                logging.info(f"Processed image {img_filename}")
-                                return f"\n\n--- DIAGRAM ON PAGE {page_num + 1} ---\nIMAGE DESCRIPTION: {desc}\n![Diagram]({public_img_url})\n---\n\n"
-                    except Exception as img_upload_err:
-                        logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+            def upload_image_to_supabase(image_bytes, img_filename):
+                try:
+                    supabase_new.storage.from_(bucket_name).upload(img_filename, image_bytes, {"content-type": "image/jpeg"})
+                    return supabase_new.storage.from_(bucket_name).get_public_url(img_filename)
+                except Exception as e:
+                    logging.error(f"Image upload failed: {e}")
                     return None
-    
-                for page_num in range(len(pdf_document)):
-                    page = pdf_document[page_num]
-                    image_list = page.get_images(full=True)
+            
+            logging.info("Starting Multi-Modal Image Extraction (Skipping LLM API)...")
+            pdf_document = fitz.open(file_path)
+            
+            def process_single_image(page_num, img_index, base_image):
+                img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{base_image['ext']}"
+                try:
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    if image_ext.lower() not in ["png", "jpeg", "jpg"]:
+                        return None
+                        
+                    public_img_url = upload_image_to_supabase(image_bytes, img_filename)
                     
-                    for img_index, img in enumerate(image_list):
-                        xref = img[0]
-                        base_image = pdf_document.extract_image(xref)
-                        
-                        # Process immediately instead of buffering to save memory (Fixes Render OOM)
-                        res = process_single_image(page_num, img_index, base_image)
-                        if res:
-                            all_extracted_images.append(res)
-                        
-                        # Free up memory immediately
-                        del base_image
-                        import gc
-                        gc.collect()
-    
-                pdf_document.close()
+                    if public_img_url:
+                        logging.info(f"Extracted and uploaded image {img_filename} (No AI Description)")
+                        return f"\n\n--- DIAGRAM ON PAGE {page_num + 1} ---\n![Diagram]({public_img_url})\n---\n\n"
+                except Exception as img_upload_err:
+                    logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
+                return None
+
+            for page_num in range(len(pdf_document)):
+                page = pdf_document[page_num]
+                image_list = page.get_images(full=True)
+                
+                for img_index, img in enumerate(image_list):
+                    xref = img[0]
+                    base_image = pdf_document.extract_image(xref)
+                    
+                    # Process immediately instead of buffering to save memory
+                    res = process_single_image(page_num, img_index, base_image)
+                    if res:
+                        all_extracted_images.append(res)
+                    
+                    # Free up memory immediately
+                    del base_image
+                    import gc
+                    gc.collect()
+
+            pdf_document.close()
             
         except Exception as e:
             logging.error(f"Image extraction failed: {e}")
