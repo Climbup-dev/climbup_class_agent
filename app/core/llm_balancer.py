@@ -149,10 +149,33 @@ def get_balanced_vision_llm():
                 max_retries=0 # Crucial: Instant failover to the next key!
             ))
             
-    # Secondary: Removed OpenRouter because 400/404 errors bypass rate limit sleep logic
+    # Secondary: Groq Llama 3.2 Vision (Extremely Fast, Good Free Tier)
+    groq_keys = get_api_keys("GROQ_API_KEYS")
+    if groq_keys:
+        random.shuffle(groq_keys)
+        for key in groq_keys:
+            llms.append(ChatGroq(
+                model="llama-3.2-11b-vision-preview",
+                temperature=0.3,
+                api_key=key,
+                max_retries=0
+            ))
+            
+    # Tertiary: Together AI Llama 3.2 Vision
+    together_keys = get_api_keys("TOGETHER_API_KEYS")
+    if together_keys:
+        random.shuffle(together_keys)
+        for key in together_keys:
+            llms.append(ChatOpenAI(
+                model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo", 
+                openai_api_key=key, 
+                openai_api_base="https://api.together.xyz/v1",
+                temperature=0.3,
+                max_retries=0
+            ))
             
     if not llms:
-        logging.warning("No GEMINI keys found for Vision processing.")
+        logging.warning("No Vision keys found for processing.")
         return ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key="dummy")
         
     # Return the fallback chain
