@@ -265,7 +265,7 @@ def process_upload_in_background(
                         llm_vision = get_balanced_vision_llm()
                         response = None
                         
-                        for attempt in range(3):
+                        for attempt in range(5):
                             try:
                                 response = llm_vision.invoke([
                                     HumanMessage(content=[
@@ -276,7 +276,8 @@ def process_upload_in_background(
                                 break
                             except Exception as e:
                                 if '429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e):
-                                    time.sleep(5 * (attempt + 1))
+                                    logging.warning(f"Rate limit hit! Sleeping for {20 * (attempt + 1)} seconds...")
+                                    time.sleep(20 * (attempt + 1))
                                 else:
                                     raise e
                                     

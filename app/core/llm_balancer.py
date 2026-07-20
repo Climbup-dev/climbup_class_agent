@@ -149,29 +149,10 @@ def get_balanced_vision_llm():
                 max_retries=0 # Crucial: Instant failover to the next key!
             ))
             
-    # Secondary: OpenRouter Fallbacks
-    if openrouter_keys:
-        random.shuffle(openrouter_keys)
-        for key in openrouter_keys:
-            # Fallback 1: OpenRouter Gemini 2.0
-            llms.append(ChatOpenAI(
-                model="google/gemini-2.0-flash-lite-preview-02-05:free", 
-                openai_api_key=key, 
-                openai_api_base="https://openrouter.ai/api/v1",
-                temperature=0.3,
-                max_retries=0
-            ))
-            # Fallback 2: Qwen 2 VL (Reliable for vision)
-            llms.append(ChatOpenAI(
-                model="qwen/qwen-2-vl-7b-instruct:free", 
-                openai_api_key=key, 
-                openai_api_base="https://openrouter.ai/api/v1",
-                temperature=0.3,
-                max_retries=0
-            ))
+    # Secondary: Removed OpenRouter because 400/404 errors bypass rate limit sleep logic
             
     if not llms:
-        logging.warning("No GEMINI or OPENROUTER keys found for Vision processing.")
+        logging.warning("No GEMINI keys found for Vision processing.")
         return ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key="dummy")
         
     # Return the fallback chain
