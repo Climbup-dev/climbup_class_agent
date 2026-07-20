@@ -147,59 +147,40 @@ class SingleShotApp:
                         results = ranker.rerank(rerankrequest)
                         
                         # Take top 6 most relevant chunks so we don't miss any assignment questions
-                        top_6_chunks = [res["text"] for res in results[:6]]
+                        top_6_chunks = [f"[Page {res['meta'].get('page_label', 'Unknown')}]\n{res['text']}" for res in results[:6]]
                         context = "\n\n---\n\n".join(top_6_chunks)
                         logging.info("FlashRank successfully reduced context size.")
                     except Exception as e:
                         logging.error(f"FlashRank Error: {e}. Falling back to normal context.")
-                        context = "\n\n---\n\n".join([doc.page_content for doc in docs[:6]])
+                        context = "\n\n---\n\n".join([f"[Page {doc.metadata.get('page_label', 'Unknown')}]\n{doc.page_content}" for doc in docs[:6]])
                 else:
-                    context = "\n\n---\n\n".join([doc.page_content for doc in docs[:6]])
+                    context = "\n\n---\n\n".join([f"[Page {doc.metadata.get('page_label', 'Unknown')}]\n{doc.page_content}" for doc in docs[:6]])
             else:
                 context = "DATA NOT AVAILABLE IN PDF"
         
         # 3. The Super Prompt (Single Shot reasoning + formatting)
         super_prompt = PromptTemplate.from_template("""
-        You are the Ultimate AI Professor.
+        You are an expert, friendly AI Teacher interacting with a student in a Live Chat.
         Student Name: {student_name}
         Subject: {subject_name} | Topic: {topic_name}
         
         Student's Question: {question}
-        Chat History (Context only): {chat_history}
+        Chat History: {chat_history}
         
-        STUDENT's ANGLE & REQUIRED FORMATTING:
-        {user_angle_instruction}
-        
-        PDF CONTEXT:
+        PDF CONTEXT (Source of Truth):
         {context}
         
-        YOUR TASK:
-        Generate a beautiful educational response in JSON format.
-        
-        RULES:
-        1. "chat_content": MUST ALWAYS BE EXACTLY THE WORD 'SILENCE'.
-        2. "board_content": This is the main teaching board. Write in a flawless, natural mix of Hinglish and English.
-           - CRITICAL ANTI-HALLUCINATION RULE: If the student asks for assignments or questions, you MUST ONLY provide exact quotes from the "PDF CONTEXT". If you cannot find any assignments in the context, DO NOT invent your own. Instead, politely reply: "> Sorry, mujhe PDF notes mein assignment questions nahi mile."
-           - IF PDF CONTEXT IS "GENERAL_KNOWLEDGE_MODE": The student is just chatting or asking a general question. Ignore the PDF rules. Answer them directly, creatively, and intelligently using your own knowledge. You can tell jokes, write code, or just chat normally.
-           - IF PDF CONTEXT CONTAINS ACTUAL TEXT: 
-             - EXACT QUOTE: If the user asks for assignments or questions, you MUST extract ALL of them and display them in Markdown quote blocks (`> "..."`). DO NOT change a single letter of the PDF text.
-             - IMAGES & DIAGRAMS: If the PDF Context contains an image URL like `![Diagram](URL)`, you MUST show it to the student! 
-               Format it beautifully like this:
-               ```markdown
-               <br/>
-               
-               ![Diagram Name](URL)
-               
-               *👆 Educational Diagram / Chart*
-               <br/>
-               ```
-             - EXPLANATION: Explain the quotes and diagrams beautifully in Hinglish.
-           - IF PDF CONTEXT IS "DATA NOT AVAILABLE IN PDF": State clearly that the data is not in the PDF and do not invent assignments.
+        YOUR TASK & RULES:
+        1. Respond directly to the student in a concise, natural, and friendly conversational tone (mix of English and conversational Hindi/Hinglish). Do NOT act like a robot.
+        2. Do NOT write massive, long essays. Keep your answers short, systematic, and easy to read in a small chat window. Use short paragraphs or bullet points.
+        3. If the student asks for a specific detail (like "page number", "definition", or "assignment questions"), provide exactly that detail quickly. Do not explain the entire topic unless asked. The Page Number is indicated in the Context block as [Page X].
+        4. CRITICAL: If the answer is in the PDF CONTEXT, use it. If not, clearly say you cannot find it in the PDF.
+        5. Put your entire educational response inside "chat_content". Set "board_content" to "".
         
         RESPOND STRICTLY IN JSON FORMAT:
         {{
-            "board_content": "Your beautifully formatted Markdown explanation with exact quotes here.",
-            "chat_content": "SILENCE"
+            "chat_content": "Your natural, concise, and accurate chat response here.",
+            "board_content": ""
         }}
         """)
         
