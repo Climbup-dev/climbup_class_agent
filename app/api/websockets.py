@@ -310,6 +310,14 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     if not board_content:
                         continue
                 
+                # MERGE BOARD CONTENT INTO CHAT CONTENT since board is removed on frontend
+                if board_content:
+                    if chat_content and chat_content.upper() != "SILENCE":
+                        chat_content = f"{chat_content}\n\n{board_content}"
+                    else:
+                        chat_content = board_content
+                    board_content = ""
+                
                 manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
 
             except Exception as e:
