@@ -233,218 +233,11 @@ def process_upload_in_background(
         logging.info("Starting Extraction using LlamaParse...")
         llama_docs = parser.load_data(file_path)
         
-        # --- MULTI-MODAL IMAGE EXTRACTION (PyMuPDF -> Supabase) ---
-        extracted_images_by_page = {}
-        try:
-            def upload_image_to_supabase(image_bytes, img_filename):
-                try:
-                    supabase_new.storage.from_(bucket_name).upload(img_filename, image_bytes, {"content-type": "image/jpeg"})
-                    return supabase_new.storage.from_(bucket_name).get_public_url(img_filename)
-                except Exception as e:
-                    logging.error(f"Image upload failed: {e}")
-                    return None
-            
-            logging.info("Starting PyMuPDF Image Extraction with Relative Y-Coordinates...")
-            import fitz
-            pdf_document = fitz.open(file_path)
-            
-            for page_num in range(len(pdf_document)):
-                page = pdf_document[page_num]
-                page_height = page.rect.height if page.rect.height > 0 else 1.0
-                blocks = page.get_text("dict").get("blocks", [])
-                
-                img_index = 0
-                for b in blocks:
-                    if b.get("type") == 1 and "image" in b: # Image block
-                        bbox = b.get("bbox", [0, 0, 0, 0])
-                        y0 = bbox[1]
-                        
-                        img_width = bbox[2] - bbox[0]
-                        img_height = bbox[3] - bbox[1]
-                        page_width = page.rect.width if page.rect.width > 0 else 1.0
-                        
-                        # Full page scan heuristic filter (85% of page width and height)
-                        if (img_width / page_width > 0.85) and (img_height / page_height > 0.85):
-                            logging.info(f"Skipping full-page scanned image on page {page_num+1} (W: {img_width:.1f}, H: {img_height:.1f})")
-                            continue
-                            
-                        relative_y = max(0.0, min(1.0, y0 / page_height))
-                        
-                        img_filename = f"{classroom_id}_p{page_num+1}_{img_index}.{b.get('ext', 'png')}"
-                        try:
-                            image_bytes = b["image"]
-                            image_ext = b.get("ext", "png")
-                            if image_ext.lower() not in ["png", "jpeg", "jpg"]:
-                                continue
-                                
-                            public_img_url = upload_image_to_supabase(image_bytes, img_filename)
-                            
-                            if public_img_url:
-                                logging.info(f"Extracted and uploaded image {img_filename} at Y={relative_y*100:.1f}%")
-                                res = (relative_y, f"\n\n![Diagram]({public_img_url})\n\n")
-                                
-                                if page_num not in extracted_images_by_page:
-                                    extracted_images_by_page[page_num] = []
-                                extracted_images_by_page[page_num].append(res)
-                                img_index += 1
-                        except Exception as img_upload_err:
-                            logging.error(f"Failed to process image {img_filename}: {img_upload_err}")
-                
-                # Explicitly clear memory to prevent OOM kills on small servers
-                del blocks
-                del page
-                import gc
-                gc.collect()
-                            
-            pdf_document.close()
-            
-        except Exception as e:
-            logging.error(f"Image extraction failed: {e}")
-        # ----------------------------------------------------------------
+        # --- SIMPLIFIED EXTRACTION (LlamaParse Text Only) ---
+        full_text = "\n\n".join([doc.text.strip() for doc in llama_docs])
         
-        # --- SMART Y-COORDINATE INTERLEAVING ---
-        full_text_pages = []
-        for i, doc in enumerate(llama_docs):
-            page_text = doc.text.strip()
-            page_images = extracted_images_by_page.get(i, [])
-            
-            if page_images:
-                # Sort images by relative_y
-                page_images.sort(key=lambda x: x[0])
-                
-                # Split text into paragraphs
-                paragraphs = [p.strip() for p in page_text.split("\n\n") if p.strip()]
-                num_paras = len(paragraphs)
-                
-                if num_paras > 0:
-                    result_blocks = list(paragraphs)
-                    
-                    # Insert images from bottom to top to avoid messing up indices
-                    for rel_y, img_md in reversed(page_images):
-                        insert_idx = min(num_paras, max(0, int(rel_y * num_paras)))
-                        result_blocks.insert(insert_idx, img_md.strip())
-                        
-                    interleaved_text = "\n\n".join(result_blocks)
-                else:
-                    # Fallback if no paragraphs found
-                    interleaved_text = page_text + "\n\n" + "".join([img[1] for img in page_images])
-            else:
-                interleaved_text = page_text
-                
-            page_content = f"--- PAGE {i+1} START ---\n{interleaved_text}\n--- PAGE {i+1} END ---"
-            full_text_pages.append(page_content)
-            
-        full_text = "\n\n".join(full_text_pages)
-                
         if not full_text.strip():
-             raise ValueError("Could not extract any text or image data from the file.")
-             
-        # --- GENERATE GUIDED TOUR JSON (ROBUST CHUNKED ARCHITECTURE) ---
-        try:
-            tour_prompt = PromptTemplate.from_template("""
-            You are a super cool, ultra-smart professor. You have been given a chunk of text from a lecture PDF containing a few pages.
-            Your task is to generate explanations for EACH PAGE.
-            
-            TEXT CHUNK:
-            {text_chunk}
-            
-            IMPORTANT RULES:
-            1. ONE PAGE = ONE LESSON: The TEXT CHUNK is clearly divided by page markers (e.g., --- PAGE 1 START ---). You MUST generate exactly ONE single lesson explanation for EVERY SINGLE PAGE provided. If there are 5 pages in this chunk, you MUST generate exactly 5 lessons.
-            2. EXPLANATION STYLE: The "explanation" MUST be in simple and clear English, mixed with easy-to-understand Hinglish where it helps clarify complex concepts. Use everyday real-world analogies so the student feels "WOW, this is so easy!". Use emojis. Keep it highly detailed.
-            3. DO NOT INCLUDE QUOTES: Do not copy the original text or images. Only provide the "topic" (a short title for the page) and your "explanation".
-            
-            OUTPUT FORMAT (Strictly valid JSON only):
-            {{
-                "lessons": [
-                    {{
-                        "page_marker": "PAGE 1",
-                        "topic": "Title of the page",
-                        "explanation": "Simple clear English/Hinglish detailed explanation..."
-                    }}
-                ]
-            }}
-            """)
-            
-            import concurrent.futures
-            import json
-            
-            chunk_size = 5
-            
-            def process_chunk(chunk_start_idx, chunk_pages):
-                chunk_text = "\n\n".join(chunk_pages)
-                llm_gemini = get_balanced_fast_llm()
-                
-                for attempt in range(3):
-                    try:
-                        response = llm_gemini.invoke(tour_prompt.format(text_chunk=chunk_text))
-                        content = response.content
-                        if isinstance(content, list):
-                            content = "".join([str(c.get("text", "")) if isinstance(c, dict) else str(c) for c in content])
-                        
-                        content = content.strip()
-                        if content.startswith("```json"): content = content[7:]
-                        elif content.startswith("```"): content = content[3:]
-                        if content.endswith("```"): content = content[:-3]
-                        content = content.strip()
-                        
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}')
-                        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                            content = content[start_idx:end_idx+1]
-                        
-                        parsed = json.loads(content)
-                        if isinstance(parsed, dict) and "lessons" in parsed:
-                            return parsed["lessons"]
-                    except Exception as e:
-                        logging.warning(f"Chunk starting at {chunk_start_idx} failed attempt {attempt+1}: {e}")
-                        import time
-                        time.sleep(2)
-                return []
-
-            # Execute in parallel using universal cluster
-            logging.info(f"Processing {len(full_text_pages)} pages in chunks of {chunk_size}...")
-            futures = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                for i in range(0, len(full_text_pages), chunk_size):
-                    chunk = full_text_pages[i:i + chunk_size]
-                    futures.append((i, executor.submit(process_chunk, i, chunk)))
-                
-                # Collect results in correct order
-                parsed_lessons = []
-                for i, future in futures:
-                    parsed_lessons.extend(future.result())
-
-            # Map generated explanations back to the exact quotes
-            final_lessons = []
-            syllabus = []
-            for i, page_text in enumerate(full_text_pages):
-                topic = parsed_lessons[i].get("topic", f"Topic {i+1}") if i < len(parsed_lessons) else f"Topic {i+1}"
-                explanation = parsed_lessons[i].get("explanation", "Explanation missing.") if i < len(parsed_lessons) else "Explanation missing."
-                
-                final_lessons.append({
-                    "topic": topic,
-                    "exact_quote": page_text, # Pure Python assignment, 100% markdown preservation!
-                    "explanation": explanation
-                })
-                syllabus.append(topic)
-                
-            final_tour_json = {
-                "syllabus": syllabus,
-                "lessons": final_lessons
-            }
-            
-            os.makedirs("uploads", exist_ok=True)
-            tour_json_path = f"uploads/{classroom_id}_tour.json"
-            with open(tour_json_path, "w", encoding="utf-8") as f:
-                json.dump(final_tour_json, f, indent=4)
-                
-            try:
-                with open(tour_json_path, "rb") as f:
-                    supabase_new.storage.from_("class_tours").upload(f"{classroom_id}_tour.json", f.read(), {"content-type": "application/json"})
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"Warning: Failed to generate course tour: {e}")
+             raise ValueError("Could not extract any text from the file.")
         # ---------------------------------
              
         metadata = {
@@ -494,6 +287,22 @@ def process_upload_in_background(
         shutil.rmtree(faiss_dir)
         logging.info(f"Background processing complete for {classroom_id}")
         
+        # Notify clients that course is ready
+        try:
+            import json
+            import asyncio
+            from app.api.websockets import manager
+            # We need to run the async broadcast in the event loop
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            loop.run_until_complete(manager.broadcast_to_classroom(classroom_id, json.dumps({"type": "course_ready", "classroom_id": classroom_id})))
+            logging.info("Broadcasted course_ready to frontend!")
+        except Exception as e:
+            logging.warning(f"Failed to broadcast course_ready: {e}")
+            
     except Exception as e:
         logging.error(f"Background processing failed: {e}")
 
@@ -542,29 +351,7 @@ async def upload_smart_material(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    try:
-        with open(file_path, "rb") as f:
-            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
-    except Exception:
-        pass # Already exists or error
-        
-    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
-    try:
-        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
-    except Exception as e:
-        print(f"Failed to update db: {e}")
-        
-    try:
-        with open(file_path, "rb") as f:
-            supabase_new.storage.from_("class_materials").upload(f"{classroom_id}.pdf", f.read(), {"content-type": "application/pdf"})
-    except Exception:
-        pass # Already exists or error
-        
-    public_pdf_url = supabase_new.storage.from_("class_materials").get_public_url(f"{classroom_id}.pdf")
-    try:
-        supabase_new.table("classrooms").update({"pdf_url": public_pdf_url}).eq("id", classroom_id).execute()
-    except Exception as e:
-        print(f"Failed to update db: {e}")
+        # Removed duplicate upload blocks
         
     try:
         supabase_new.table('subjects').upsert({
@@ -579,7 +366,7 @@ async def upload_smart_material(
         except Exception:
             pass # Bucket likely already exists
             
-        storage_path = f"{classroom_id}_{file.filename}"
+        storage_path = f"{classroom_id}.pdf"
         with open(file_path, "rb") as f:
             supabase_new.storage.from_(bucket_name).upload(storage_path, f.read(), {"content-type": "application/pdf"})
             
