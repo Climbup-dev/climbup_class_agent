@@ -166,13 +166,13 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                     import pickle
                     
                     faiss_vs = FAISS.load_local(faiss_dir, manager.embeddings, allow_dangerous_deserialization=True)
-                    faiss_retriever = faiss_vs.as_retriever(search_kwargs={"k": 10})
+                    faiss_retriever = faiss_vs.as_retriever(search_kwargs={"k": 15})
                     
                     bm25_path = os.path.join(faiss_dir, "bm25.pkl")
                     if os.path.exists(bm25_path):
                         with open(bm25_path, "rb") as f:
                             bm25_retriever = pickle.load(f)
-                        bm25_retriever.k = 10
+                        bm25_retriever.k = 15
                         retriever = HybridEnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.4, 0.6])
                     else:
                         retriever = faiss_retriever
