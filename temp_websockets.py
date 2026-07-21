@@ -359,7 +359,10 @@ async def websocket_endpoint(websocket: WebSocket, classroom_id: str, student_id
                 manager.classroom_history[classroom_id].append(f"AI Teacher: {chat_content}")
 
             except Exception as e:
-                chat_content = f"I'm sorry, my AI brain encountered an error: {str(e)}"
+                # Log the real error to the server console so developers can see it
+                print(f"CRITICAL BACKEND ERROR: {str(e)}")
+                # Send a completely generic, safe message to the user so hackers get NO information
+                chat_content = "I'm sorry, I lost my connection for a moment. Could you please repeat that?"
                 board_content = ""
 
             await websocket.send_json({
