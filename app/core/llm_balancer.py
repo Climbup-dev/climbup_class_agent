@@ -18,22 +18,51 @@ def get_api_keys(env_var_name: str) -> list[str]:
 def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
     llms = []
     
-    # 1. SambaNova
-    sambanova_keys = get_api_keys("SAMBANOVA_API_KEYS")
-    if sambanova_keys:
-        random.shuffle(sambanova_keys)
-        for key in sambanova_keys:
-            llm = ChatOpenAI(
-                model="Meta-Llama-3.3-70B-Instruct", 
-                openai_api_key=key, 
-                openai_api_base="https://api.sambanova.ai/v1",
+    # 1. Groq (Absolute Fastest, Generous Free Tier, Highest Priority)
+    groq_keys = get_api_keys("GROQ_API_KEYS")
+    if groq_keys:
+        random.shuffle(groq_keys)
+        for key in groq_keys:
+            llm = ChatGroq(
+                model="llama-3.3-70b-versatile",
                 temperature=temperature,
-                max_retries=0 # Instant failover
+                api_key=key,
+                max_retries=0
             )
             if bind_kwargs: llm = llm.bind(**bind_kwargs)
             llms.append(llm)
 
-    # 2. Cerebras
+    # 2. Google Native Gemini (Very Fast, High Limits)
+    gemini_keys = get_api_keys("GEMINI_API_KEYS")
+    if gemini_keys:
+        random.shuffle(gemini_keys)
+        for key in gemini_keys:
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash",
+                temperature=temperature,
+                api_key=key,
+                max_retries=0
+            )
+            if bind_kwargs: llm = llm.bind(**bind_kwargs)
+            llms.append(llm)
+
+    # 3. OpenRouter Free Tier Fallbacks (Fixed Invalid Model ID)
+    openrouter_keys = get_api_keys("OPENROUTER_API_KEYS")
+    if openrouter_keys:
+        random.shuffle(openrouter_keys)
+        for key in openrouter_keys:
+            # Using the stable 2.0 flash free version instead of the invalid lite preview
+            llm = ChatOpenAI(
+                model="google/gemini-2.0-flash:free", 
+                openai_api_key=key, 
+                openai_api_base="https://openrouter.ai/api/v1",
+                temperature=temperature,
+                max_retries=0
+            )
+            if bind_kwargs: llm = llm.bind(**bind_kwargs)
+            llms.append(llm)
+
+    # 4. Cerebras (Extremely Fast Fallback)
     cerebras_keys = get_api_keys("CEREBRAS_API_KEYS")
     if cerebras_keys:
         random.shuffle(cerebras_keys)
@@ -48,35 +77,22 @@ def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
             if bind_kwargs: llm = llm.bind(**bind_kwargs)
             llms.append(llm)
 
-    # 3. Groq
-    groq_keys = get_api_keys("GROQ_API_KEYS")
-    if groq_keys:
-        random.shuffle(groq_keys)
-        for key in groq_keys:
-            llm = ChatGroq(
-                model="llama-3.3-70b-versatile",
+    # 5. SambaNova
+    sambanova_keys = get_api_keys("SAMBANOVA_API_KEYS")
+    if sambanova_keys:
+        random.shuffle(sambanova_keys)
+        for key in sambanova_keys:
+            llm = ChatOpenAI(
+                model="Meta-Llama-3.3-70B-Instruct", 
+                openai_api_key=key, 
+                openai_api_base="https://api.sambanova.ai/v1",
                 temperature=temperature,
-                api_key=key,
-                max_retries=0
-            )
-            if bind_kwargs: llm = llm.bind(**bind_kwargs)
-            llms.append(llm)
-
-    # 4. Google Gemini (Upgraded to 2.0 Flash)
-    gemini_keys = get_api_keys("GEMINI_API_KEYS")
-    if gemini_keys:
-        random.shuffle(gemini_keys)
-        for key in gemini_keys:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
-                temperature=temperature,
-                api_key=key,
                 max_retries=0
             )
             if bind_kwargs: llm = llm.bind(**bind_kwargs)
             llms.append(llm)
             
-    # 5. Together AI
+    # 6. Together AI
     together_keys = get_api_keys("TOGETHER_API_KEYS")
     if together_keys:
         random.shuffle(together_keys)
@@ -91,7 +107,7 @@ def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
             if bind_kwargs: llm = llm.bind(**bind_kwargs)
             llms.append(llm)
             
-    # 6. Mistral AI
+    # 7. Mistral AI
     mistral_keys = get_api_keys("MISTRAL_API_KEYS")
     if mistral_keys:
         random.shuffle(mistral_keys)
@@ -100,21 +116,6 @@ def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
                 model="mistral-small-latest", 
                 openai_api_key=key, 
                 openai_api_base="https://api.mistral.ai/v1",
-                temperature=temperature,
-                max_retries=0
-            )
-            if bind_kwargs: llm = llm.bind(**bind_kwargs)
-            llms.append(llm)
-
-    # 7. OpenRouter Free Tier Fallbacks
-    openrouter_keys = get_api_keys("OPENROUTER_API_KEYS")
-    if openrouter_keys:
-        random.shuffle(openrouter_keys)
-        for key in openrouter_keys:
-            llm = ChatOpenAI(
-                model="google/gemini-2.0-flash-lite-preview-02-05:free", 
-                openai_api_key=key, 
-                openai_api_base="https://openrouter.ai/api/v1",
                 temperature=temperature,
                 max_retries=0
             )
