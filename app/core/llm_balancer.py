@@ -51,9 +51,9 @@ def create_universal_fallback_chain(temperature=0.7, bind_kwargs=None):
     if openrouter_keys:
         random.shuffle(openrouter_keys)
         for key in openrouter_keys:
-            # Using the stable 2.0 flash free version instead of the invalid lite preview
+            # Using the highly stable 1.5 flash free version
             llm = ChatOpenAI(
-                model="google/gemini-2.0-flash:free", 
+                model="google/gemini-1.5-flash:free", 
                 openai_api_key=key, 
                 openai_api_base="https://openrouter.ai/api/v1",
                 temperature=temperature,
@@ -186,7 +186,4 @@ def get_balanced_text_llm(model_name="N/A", temperature=0.7):
     return create_universal_fallback_chain(temperature=temperature)
 
 def get_balanced_fast_llm():
-    return create_universal_fallback_chain(
-        temperature=0.7, 
-        bind_kwargs={"response_format": {"type": "json_object"}}
-    )
+    return create_universal_fallback_chain(temperature=0.7)
