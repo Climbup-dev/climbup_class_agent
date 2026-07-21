@@ -191,6 +191,8 @@ async def upload_material(classroom_id: str, file: UploadFile = File(...)):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"detail": str(e)})
 
+import threading
+faiss_semaphore = threading.Semaphore(1)
 
 def process_upload_in_background(
     file_path: str,
@@ -249,24 +251,28 @@ def process_upload_in_background(
             "topic_title": topic_title,
             "source": file_name
         }
-        document = Document(page_content=full_text, metadata=metadata)
         
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-        chunks = text_splitter.split_documents([document])
-        
-        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEYS", "dummy").split(",")[0].replace('"', "").replace("'", "").strip()), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
-        vector_store = FAISS.from_documents(chunks, embeddings)
-        
-        bm25_retriever = BM25Retriever.from_documents(chunks)
-        faiss_retriever = vector_store.as_retriever(search_kwargs={"k": 10})
-        bm25_retriever.k = 10
-        retriever = HybridEnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.4, 0.6])
-        
-        classroom_brains[classroom_id] = retriever
-        
-        # --- FAISS Cloud Backup ---
-        faiss_dir = f"faiss_{classroom_id}"
-        vector_store.save_local(faiss_dir)
+        # USE SEMAPHORE TO PREVENT OOM CRASHES DURING CONCURRENT FAISS BUILDS
+        with faiss_semaphore:
+            logging.info(f"Acquired RAM lock for building FAISS for {classroom_id}")
+            document = Document(page_content=full_text, metadata=metadata)
+            
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            chunks = text_splitter.split_documents([document])
+            
+            embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEYS", "dummy").split(",")[0].replace('"', "").replace("'", "").strip()), openai_api_base="https://openrouter.ai/api/v1", model="openai/text-embedding-3-small")
+            vector_store = FAISS.from_documents(chunks, embeddings)
+            
+            bm25_retriever = BM25Retriever.from_documents(chunks)
+            faiss_retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+            bm25_retriever.k = 10
+            retriever = HybridEnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.4, 0.6])
+            
+            classroom_brains[classroom_id] = retriever
+            
+            # --- FAISS Cloud Backup ---
+            faiss_dir = f"faiss_{classroom_id}"
+            vector_store.save_local(faiss_dir)
         
         with open(os.path.join(faiss_dir, "bm25.pkl"), "wb") as f:
             pickle.dump(bm25_retriever, f)
