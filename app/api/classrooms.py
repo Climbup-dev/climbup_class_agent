@@ -113,3 +113,32 @@ async def get_classroom_pdf(classroom_id: str):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/v1/students/{student_id}/notes")
+async def get_student_notes(student_id: str):
+    """
+    Fetches all personal notes (PDFs) uploaded by a specific student.
+    Used for the 'My Notes' section in the frontend UI.
+    """
+    try:
+        # Fetch rows where student_id matches exactly
+        res = supabase_new.table('classrooms').select('*').eq('student_id', student_id).order('created_at', desc=False).execute()
+        
+        notes = []
+        for row in res.data:
+            notes.append({
+                "note_id": row['id'],
+                "topic_name": row.get('topic_name', 'My Document'),
+                "pdf_url": row.get('pdf_url', ''),
+                "created_at": row.get('created_at', ''),
+                "subject_id": row.get('subject_id', '')
+            })
+            
+        return {
+            "status": "success",
+            "student_id": student_id,
+            "notes": notes
+        }
+    except Exception as e:
+        print(f"Error fetching notes for student {student_id}:", e)
+        return {"status": "error", "detail": str(e)}

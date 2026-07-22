@@ -417,7 +417,8 @@ async def upload_smart_material(
             "id": classroom_id,
             "subject_id": subject_id,
             "topic_name": topic_title,
-            "pdf_url": pdf_url
+            "pdf_url": pdf_url,
+            "student_id": student_id  # Link this upload strictly to the student
         }
         supabase_new.table('classrooms').insert(session_data).execute()
 
