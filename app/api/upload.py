@@ -318,12 +318,49 @@ async def upload_smart_material(
     semester_id: str = Form(...),
     subject_id: str = Form(...),
     topic_title: str = Form(...),
+    student_id: str = Form(...),
     file: UploadFile = File(...)
 ):
     import uuid
     import shutil
     import os
+    import datetime
+    import pytz
     from app.core.supabase_client import supabase_new
+    from fastapi.responses import JSONResponse
+    
+    # --- 1. DAILY UPLOAD QUOTA CHECK (Max 5 per day) ---
+    try:
+        ist = pytz.timezone('Asia/Kolkata')
+        today_str = datetime.datetime.now(ist).strftime('%Y-%m-%d')
+        
+        prof_res = supabase_new.table('student_profiles').select('daily_upload_count, last_upload_date').eq('student_id', student_id).execute()
+        
+        if prof_res.data:
+            prof = prof_res.data[0]
+            if prof.get('last_upload_date') == today_str:
+                if prof.get('daily_upload_count', 0) >= 5:
+                    return JSONResponse(status_code=429, content={"detail": "Daily limit reached! You can only upload 5 PDFs per day."})
+                new_count = prof.get('daily_upload_count', 0) + 1
+            else:
+                new_count = 1
+                
+            supabase_new.table('student_profiles').update({
+                "daily_upload_count": new_count,
+                "last_upload_date": today_str
+            }).eq('student_id', student_id).execute()
+        else:
+            supabase_new.table('student_profiles').insert({
+                "student_id": student_id,
+                "student_name": "Student",
+                "daily_upload_count": 1,
+                "last_upload_date": today_str,
+                "total_messages_sent": 0,
+                "engagement_level": "Beginner"
+            }).execute()
+    except Exception as quota_err:
+        print(f"Warning: Quota check failed, allowing upload: {quota_err}")
+    # ---------------------------------------------------
     
     allowed_exts = ('.pdf', '.ppt', '.pptx', '.png', '.jpg', '.jpeg')
     if not file.filename.lower().endswith(allowed_exts):
