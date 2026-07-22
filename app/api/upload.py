@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Header
 import shutil
 import os
 import uuid
@@ -318,7 +318,7 @@ async def upload_smart_material(
     semester_id: str = Form(...),
     subject_id: str = Form(...),
     topic_title: str = Form(...),
-    student_id: str = Form(...),
+    authorization: str = Header(..., description="Supabase JWT Bearer Token"),
     file: UploadFile = File(...)
 ):
     import uuid
@@ -329,6 +329,21 @@ async def upload_smart_material(
     from app.core.supabase_client import supabase_new
     from fastapi.responses import JSONResponse
     
+    # --- 0. SECURITY: VERIFY JWT TOKEN & GET STUDENT ID ---
+    if not authorization.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Invalid authorization header. Must start with Bearer."})
+        
+    token = authorization.split(" ")[1]
+    
+    try:
+        user_res = supabase_new.auth.get_user(token)
+        if not user_res or not user_res.user:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized. Invalid or expired token."})
+        student_id = user_res.user.id
+    except Exception as e:
+        return JSONResponse(status_code=401, content={"detail": f"Authentication failed: {str(e)}"})
+    # ---------------------------------------------------
+
     # --- 1. DAILY UPLOAD QUOTA CHECK (Max 5 per day) ---
     try:
         ist = pytz.timezone('Asia/Kolkata')
