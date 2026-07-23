@@ -461,5 +461,8 @@ async def upload_smart_material(
             "message": f"Successfully uploaded {file.filename}. The AI is processing the course in the background."
         }
     except Exception as e:
+        print(f"🔥 UPLOAD ERROR CAUGHT: {str(e)}")
+        import traceback
+        traceback.print_exc()
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"detail": str(e)})
