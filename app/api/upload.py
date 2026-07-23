@@ -359,8 +359,8 @@ async def upload_smart_material(
         if prof_res.data:
             prof = prof_res.data[0]
             if prof.get('last_upload_date') == today_str:
-                if prof.get('daily_upload_count', 0) >= 5:
-                    return JSONResponse(status_code=429, content={"detail": "Daily limit reached! You can only upload 5 PDFs per day."})
+                if prof.get('daily_upload_count', 0) >= 500:
+                    return JSONResponse(status_code=429, content={"detail": "Daily limit reached! You can only upload 500 PDFs per day."})
                 new_count = prof.get('daily_upload_count', 0) + 1
             else:
                 new_count = 1
