@@ -336,7 +336,12 @@ async def upload_smart_material(
     token = authorization.split(" ")[1]
     
     try:
-        user_res = supabase_new.auth.get_user(token)
+        from app.core.supabase_client import supabase_old
+        if supabase_old:
+            user_res = supabase_old.auth.get_user(token)
+        else:
+            user_res = supabase_new.auth.get_user(token)
+            
         if not user_res or not user_res.user:
             return JSONResponse(status_code=401, content={"detail": "Unauthorized. Invalid or expired token."})
         student_id = user_res.user.id
